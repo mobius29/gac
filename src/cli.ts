@@ -101,27 +101,41 @@ function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppC
   };
 }
 
+function isKnownOptionToken(value: string): boolean {
+  return (
+    value === "--help" ||
+    value === "-h" ||
+    value === "commit" ||
+    value === "debug" ||
+    value === "no-unstaged-fallback" ||
+    value === "pr" ||
+    value === "completion" ||
+    value.startsWith("pr=") ||
+    value.startsWith("completion=")
+  );
+}
+
 function parsePullRequestBase(
   argv: string[],
   index: number,
 ): { base: string; nextIndex: number } {
   const current = argv[index];
-  if (current?.startsWith("-pr=")) {
-    const value = current.slice("-pr=".length).trim();
+  if (current?.startsWith("pr=")) {
+    const value = current.slice("pr=".length).trim();
     if (value.length === 0) {
-      throw new Error("-pr requires a non-empty target branch");
+      throw new Error("pr requires a non-empty target branch");
     }
     return { base: value, nextIndex: index };
   }
 
   const next = argv[index + 1];
-  if (next == null || next.startsWith("-")) {
-    throw new Error("-pr requires a target branch argument");
+  if (next == null || isKnownOptionToken(next.trim())) {
+    throw new Error("pr requires a target branch argument");
   }
 
   const trimmed = next.trim();
   if (trimmed.length === 0) {
-    throw new Error("-pr requires a non-empty target branch");
+    throw new Error("pr requires a non-empty target branch");
   }
 
   return { base: trimmed, nextIndex: index + 1 };
@@ -132,26 +146,26 @@ function parseCompletionShell(argv: string[]): CompletionShell | undefined {
     const arg = argv[index];
     let value: string | undefined;
 
-    if (arg === "-completion") {
+    if (arg === "completion") {
       const next = argv[index + 1];
-      if (next == null || next.startsWith("-")) {
-        throw new Error("-completion requires a shell argument (bash|zsh)");
+      if (next == null || isKnownOptionToken(next.trim())) {
+        throw new Error("completion requires a shell argument (bash|zsh)");
       }
       value = next.trim();
       index += 1;
-    } else if (arg.startsWith("-completion=")) {
-      value = arg.slice("-completion=".length).trim();
+    } else if (arg.startsWith("completion=")) {
+      value = arg.slice("completion=".length).trim();
     } else {
       continue;
     }
 
     if (!value) {
-      throw new Error("-completion requires a shell argument (bash|zsh)");
+      throw new Error("completion requires a shell argument (bash|zsh)");
     }
 
     const normalized = value.toLowerCase();
     if (!isCompletionShell(normalized)) {
-      throw new Error(`Unsupported shell for -completion: ${value}. Supported shells: bash, zsh`);
+      throw new Error(`Unsupported shell for completion: ${value}. Supported shells: bash, zsh`);
     }
     return normalized;
   }
@@ -169,15 +183,15 @@ export function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "-no-unstaged-fallback") {
+    if (arg === "no-unstaged-fallback") {
       options.allowUnstagedFallback = false;
       continue;
     }
-    if (arg === "-commit") {
+    if (arg === "commit") {
       options.commit = true;
       continue;
     }
-    if (arg === "-debug") {
+    if (arg === "debug") {
       options.debug = true;
       continue;
     }
@@ -185,7 +199,7 @@ export function parseArgs(argv: string[]): CliOptions {
       options.help = true;
       continue;
     }
-    if (arg === "-pr" || arg.startsWith("-pr=")) {
+    if (arg === "pr" || arg.startsWith("pr=")) {
       const parsed = parsePullRequestBase(argv, index);
       options.pullRequestBase = parsed.base;
       index = parsed.nextIndex;
@@ -201,11 +215,11 @@ function buildHelpText(): string {
     "",
     "Options:",
     "  -h, --help                 Show this help message and exit",
-    "      -commit                Commit with the generated message",
-    "      -pr <target-branch>    Create GitHub pull request targeting branch",
-    "      -completion <shell>    Print shell completion script (bash|zsh)",
-    "      -debug                 Print pipeline debug metadata to stderr",
-    "      -no-unstaged-fallback  Only read staged diff; do not fallback to unstaged diff",
+    "      commit                 Commit with the generated message",
+    "      pr <target-branch>     Create GitHub pull request targeting branch",
+    "      completion <shell>     Print shell completion script (bash|zsh)",
+    "      debug                  Print pipeline debug metadata to stderr",
+    "      no-unstaged-fallback   Only read staged diff; do not fallback to unstaged diff",
   ].join("\n");
 }
 

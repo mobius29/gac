@@ -22,16 +22,16 @@ Default diff source behavior:
 Commit is explicit opt-in only:
 
 ```bash
-gac -commit
+gac commit
 ```
 
 Create a pull request against target branch:
 
 ```bash
-gac -pr main
+gac pr main
 ```
 
-`-pr <target-branch>` behavior:
+`pr <target-branch>` behavior:
 
 1. ensures current branch exists on `origin` (pushes with upstream if missing)
    if local `HEAD` SHA differs from `origin/<current-branch>`, it pushes first
@@ -43,13 +43,13 @@ gac -pr main
 Create commit then open PR:
 
 ```bash
-gac -commit -pr main
+gac commit pr main
 ```
 
 Disable unstaged fallback:
 
 ```bash
-gac -no-unstaged-fallback
+gac no-unstaged-fallback
 ```
 
 Show help:
@@ -61,20 +61,20 @@ gac --help
 Enable pipeline debug metadata:
 
 ```bash
-gac -debug
+gac debug
 ```
 
 Shell completion:
 
 ```bash
 # zsh (current session)
-source <(gac -completion zsh)
+source <(gac completion zsh)
 
 # bash (current session)
-source <(gac -completion bash)
+source <(gac completion bash)
 ```
 
-After loading completion, typing `gac -pr <TAB>` shows branch names from `origin/*`.
+After loading completion, typing `gac pr <TAB>` shows branch names from `origin/*`.
 
 After generating a subject, `gac` prints LLM usage metrics to `stderr`:
 request count and token totals (`prompt`, `completion`, `total`).

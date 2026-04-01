@@ -3,22 +3,44 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createPullRequest, type GhCommandRunner } from "../src/gh.js";
+import { createOrUpdatePullRequest, createPullRequest, type GhCommandRunner } from "../src/gh.js";
+
+interface RunnerResult {
+  stdout: string;
+  stderr?: string;
+  status?: number;
+}
+
+function isRunnerResult(value: RunnerResult | Record<string, RunnerResult>): value is RunnerResult {
+  return typeof (value as RunnerResult).stdout === "string";
+}
 
 class MockGhRunner implements GhCommandRunner {
   readonly calls: string[][] = [];
-  private readonly result: { stdout: string; stderr?: string; status?: number };
+  private readonly singleOutput?: RunnerResult;
+  private readonly mappedOutputs?: Record<string, RunnerResult>;
 
-  constructor(result: { stdout: string; stderr?: string; status?: number }) {
-    this.result = result;
+  constructor(
+    outputs: RunnerResult | Record<string, RunnerResult>,
+  ) {
+    if (isRunnerResult(outputs)) {
+      this.singleOutput = outputs;
+      return;
+    }
+    this.mappedOutputs = outputs;
   }
 
   run(args: string[]) {
     this.calls.push(args);
+    const key = args.join(" ");
+    const result =
+      this.singleOutput ??
+      this.mappedOutputs?.[key] ??
+      ({ stdout: "", stderr: `unexpected gh call: ${key}`, status: 1 } as RunnerResult);
     return {
-      stdout: this.result.stdout,
-      stderr: this.result.stderr ?? "",
-      status: this.result.status ?? 0,
+      stdout: result.stdout,
+      stderr: result.stderr ?? "",
+      status: result.status ?? 0,
     };
   }
 }
@@ -172,5 +194,75 @@ describe("createPullRequest", () => {
       ),
     ).toThrowError("Cannot create pull request with an empty title");
     expect(runner.calls).toEqual([]);
+  });
+});
+
+describe("createOrUpdatePullRequest", () => {
+  it("updates existing pull request when branch pair already has an open PR", () => {
+    const runner = new MockGhRunner({
+      "pr list --state open --base develop --head feature/new-api --json number,headRefOid,url": {
+        stdout: '[{"number":42,"headRefOid":"abc123","url":"https://example.test/pull/42"}]\n',
+      },
+      "pr edit 42 --title feat: add batch import --body Add endpoint summary": {
+        stdout: "https://example.test/pull/42\n",
+      },
+    });
+
+    const result = createOrUpdatePullRequest(
+      {
+        title: "feat: add batch import",
+        body: "Add endpoint summary",
+        base: "develop",
+        head: "feature/new-api",
+      },
+      runner,
+    );
+
+    expect(result.action).toBe("updated");
+    expect(result.number).toBe(42);
+    expect(result.output).toBe("https://example.test/pull/42");
+    expect(runner.calls).toEqual([
+      ["pr", "list", "--state", "open", "--base", "develop", "--head", "feature/new-api", "--json", "number,headRefOid,url"],
+      ["pr", "edit", "42", "--title", "feat: add batch import", "--body", "Add endpoint summary"],
+    ]);
+  });
+
+  it("creates pull request when no open PR exists for branch pair", () => {
+    const runner = new MockGhRunner({
+      "pr list --state open --base main --head feature/seed-data --json number,headRefOid,url": {
+        stdout: "[]\n",
+      },
+      "pr create --title feat: seed data --body Seed records --base main --head feature/seed-data": {
+        stdout: "https://example.test/pull/77\n",
+      },
+    });
+
+    const result = createOrUpdatePullRequest(
+      {
+        title: "feat: seed data",
+        body: "Seed records",
+        base: "main",
+        head: "feature/seed-data",
+      },
+      runner,
+    );
+
+    expect(result.action).toBe("created");
+    expect(result.output).toBe("https://example.test/pull/77");
+    expect(runner.calls).toEqual([
+      ["pr", "list", "--state", "open", "--base", "main", "--head", "feature/seed-data", "--json", "number,headRefOid,url"],
+      [
+        "pr",
+        "create",
+        "--title",
+        "feat: seed data",
+        "--body",
+        "Seed records",
+        "--base",
+        "main",
+        "--head",
+        "feature/seed-data",
+      ],
+    ]);
   });
 });

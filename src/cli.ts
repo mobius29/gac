@@ -3,7 +3,7 @@
 import { pathToFileURL } from "node:url";
 import { getCompletionScript, isCompletionShell, type CompletionShell } from "./completion.js";
 import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
-import { createPullRequest } from "./gh.js";
+import { createOrUpdatePullRequest } from "./gh.js";
 import { collectBranchDiff, commitWithMessage, ensureCurrentBranchOnOrigin } from "./git.js";
 import { createProviderFromConfig } from "./llm/factory.js";
 import { MockLlmProvider } from "./llm/mockProvider.js";
@@ -44,6 +44,7 @@ export interface CliDeps {
   createPullRequest?: (options: {
     title: string;
     base: string;
+    head: string;
     body: string;
   }) => void | Promise<void>;
   collectBranchDiff?: (baseBranch: string) => string | Promise<string>;
@@ -285,8 +286,13 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     });
   const openPullRequest =
     deps.createPullRequest ??
-    ((options: { title: string; base: string; body: string }) => {
-      createPullRequest({ title: options.title, base: options.base, body: options.body });
+    ((options: { title: string; base: string; head: string; body: string }) => {
+      createOrUpdatePullRequest({
+        title: options.title,
+        base: options.base,
+        head: options.head,
+        body: options.body,
+      });
     });
   const collectBranchDiffAgainstBase = deps.collectBranchDiff ?? collectBranchDiff;
   const ensureBranchOnOrigin = deps.ensureCurrentBranchOnOrigin ?? ensureCurrentBranchOnOrigin;
@@ -354,8 +360,9 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     }
 
     if (options.pullRequestBase) {
+      let currentBranch = "";
       try {
-        await ensureBranchOnOrigin();
+        currentBranch = await ensureBranchOnOrigin();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         stderr.write(`Failed to create pull request: ${message}\n`);
@@ -407,6 +414,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
         await openPullRequest({
           title: generatedPr.commitMessage,
           base: options.pullRequestBase,
+          head: currentBranch,
           body,
         });
       } catch (error: unknown) {

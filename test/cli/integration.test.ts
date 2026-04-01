@@ -262,7 +262,7 @@ describe("runCli integration", () => {
   it("creates pull request title/body from branch diff when --pr is enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
-    const prCalls: Array<{ title: string; base: string; body: string }> = [];
+    const prCalls: Array<{ title: string; base: string; head: string; body: string }> = [];
 
     const exitCode = await runCli(["--pr", "main"], {
       runPipeline: async () => {
@@ -305,6 +305,7 @@ describe("runCli integration", () => {
       {
         title: "feat: add batch import command",
         base: "main",
+        head: "feature/new-api",
         body: "## Summary\n- Add batch import endpoint and handler\n\n## Why\n- Support bulk data imports\n",
       },
     ]);

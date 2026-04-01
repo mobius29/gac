@@ -57,11 +57,11 @@ describe("runCli integration", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.read()).toContain("Usage: gac [options]");
-    expect(stdout.read()).toContain("-no-unstaged-fallback");
-    expect(stdout.read()).toContain("-commit");
-    expect(stdout.read()).toContain("-pr <target-branch>");
-    expect(stdout.read()).toContain("-completion <shell>");
-    expect(stdout.read()).toContain("-debug");
+    expect(stdout.read()).toContain("no-unstaged-fallback");
+    expect(stdout.read()).toContain("commit");
+    expect(stdout.read()).toContain("pr <target-branch>");
+    expect(stdout.read()).toContain("completion <shell>");
+    expect(stdout.read()).toContain("debug");
     expect(stderr.read()).toBe("");
   });
 
@@ -69,7 +69,7 @@ describe("runCli integration", () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-completion", "zsh"], {
+    const exitCode = await runCli(["completion", "zsh"], {
       runPipeline: async () => {
         throw new Error("runPipeline should not be called for completion output");
       },
@@ -81,7 +81,7 @@ describe("runCli integration", () => {
     const script = stdout.read();
     expect(script).toContain("compdef _gac gac");
     expect(script).toContain("refs/remotes/origin");
-    expect(script).toContain("-pr");
+    expect(script).toContain("pr");
     expect(stderr.read()).toBe("");
   });
 
@@ -89,7 +89,7 @@ describe("runCli integration", () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-completion", "fish"], {
+    const exitCode = await runCli(["completion", "fish"], {
       runPipeline: async () => {
         throw new Error("runPipeline should not be called for invalid completion shell");
       },
@@ -100,7 +100,7 @@ describe("runCli integration", () => {
     expect(exitCode).toBe(1);
     expect(stdout.read()).toBe("");
     expect(stderr.read()).toContain(
-      "Failed to generate commit message: Unsupported shell for -completion: fish. Supported shells: bash, zsh",
+      "Failed to generate commit message: Unsupported shell for completion: fish. Supported shells: bash, zsh",
     );
   });
 
@@ -168,14 +168,14 @@ describe("runCli integration", () => {
     expect(stderr.read()).toContain("No changes detected in staged diff (or unstaged fallback).");
   });
 
-  it("prints debug metadata when -debug is enabled", async () => {
+  it("prints debug metadata when debug is enabled", async () => {
     const runner = new Runner({
       "diff --cached --no-ext-diff": { stdout: SIMPLE_APP_DIFF },
     });
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-debug"], {
+    const exitCode = await runCli(["debug"], {
       runPipeline: (options) =>
         runCommitMessagePipeline({
           ...options,
@@ -192,12 +192,12 @@ describe("runCli integration", () => {
     expect(stdout.read().trim()).toMatch(/^(feat|fix|refactor|docs|test|chore):\s+/);
   });
 
-  it("commits with the generated message when -commit is enabled", async () => {
+  it("commits with the generated message when commit is enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
     const commitCalls: Array<{ message: string; source: "staged" | "unstaged" }> = [];
 
-    const exitCode = await runCli(["-commit"], {
+    const exitCode = await runCli(["commit"], {
       runPipeline: async () => ({
         diffSource: "staged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -230,7 +230,7 @@ describe("runCli integration", () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-commit"], {
+    const exitCode = await runCli(["commit"], {
       runPipeline: async () => ({
         diffSource: "unstaged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -259,14 +259,14 @@ describe("runCli integration", () => {
     expect(stderr.read()).toContain("Failed to commit changes: nothing to commit");
   });
 
-  it("creates pull request title/body from branch diff when -pr is enabled", async () => {
+  it("creates pull request title/body from branch diff when pr is enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
     const prCalls: Array<{ title: string; base: string; head: string; body: string }> = [];
 
-    const exitCode = await runCli(["-pr", "main"], {
+    const exitCode = await runCli(["pr", "main"], {
       runPipeline: async () => {
-        throw new Error("runPipeline should not be called for -pr without -commit");
+        throw new Error("runPipeline should not be called for pr without commit");
       },
       ensureCurrentBranchOnOrigin: () => "feature/new-api",
       collectBranchDiff: (baseBranch) => {
@@ -315,12 +315,12 @@ describe("runCli integration", () => {
     );
   });
 
-  it("runs commit step before pull request when -commit and -pr are both enabled", async () => {
+  it("runs commit step before pull request when commit and pr are both enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
     const callOrder: string[] = [];
 
-    const exitCode = await runCli(["-commit", "-pr", "release/v1"], {
+    const exitCode = await runCli(["commit", "pr", "release/v1"], {
       runPipeline: async () => ({
         diffSource: "unstaged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -377,9 +377,9 @@ describe("runCli integration", () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-pr", "main"], {
+    const exitCode = await runCli(["pr", "main"], {
       runPipeline: async () => {
-        throw new Error("runPipeline should not be called for -pr without -commit");
+        throw new Error("runPipeline should not be called for pr without commit");
       },
       ensureCurrentBranchOnOrigin: () => "feature/docs",
       collectBranchDiff: () => SIMPLE_APP_DIFF,
@@ -407,13 +407,13 @@ describe("runCli integration", () => {
     );
   });
 
-  it("returns exit code 1 when -pr target branch argument is missing", async () => {
+  it("returns exit code 1 when pr target branch argument is missing", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["-pr"], {
+    const exitCode = await runCli(["pr"], {
       runPipeline: async () => {
-        throw new Error("runPipeline should not be called when -pr is missing target branch");
+        throw new Error("runPipeline should not be called when pr is missing target branch");
       },
       stdout,
       stderr,
@@ -422,7 +422,7 @@ describe("runCli integration", () => {
     expect(exitCode).toBe(1);
     expect(stdout.read()).toBe("");
     expect(stderr.read()).toContain(
-      "Failed to generate commit message: -pr requires a target branch argument",
+      "Failed to generate commit message: pr requires a target branch argument",
     );
   });
 });

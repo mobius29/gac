@@ -41,6 +41,7 @@
   ],
   "license": "UNLICENSED",
   "dependencies": {
+    "commander": "^13.1.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

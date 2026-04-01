@@ -85,6 +85,26 @@ describe("runCli integration", () => {
     expect(stderr.read()).toBe("");
   });
 
+  it("prints zsh completion script with commander-style option syntax", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--completion", "zsh"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called for completion output");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    const script = stdout.read();
+    expect(script).toContain("compdef _gac gac");
+    expect(script).toContain("refs/remotes/origin");
+    expect(script).toContain("pr");
+    expect(stderr.read()).toBe("");
+  });
+
   it("returns exit code 1 for unsupported completion shell", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
@@ -373,6 +393,64 @@ describe("runCli integration", () => {
     );
   });
 
+  it("supports commander-style option syntax for commit and pr", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+    const callOrder: string[] = [];
+
+    const exitCode = await runCli(["--commit", "--pr", "release/v2"], {
+      runPipeline: async () => ({
+        diffSource: "staged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "feat: ship release prep",
+        sourceSummaries: [],
+        llmUsage: {
+          requestCount: 3,
+          promptTokens: 300,
+          completionTokens: 90,
+          totalTokens: 390,
+        },
+      }),
+      commitChanges: () => {
+        callOrder.push("commit");
+      },
+      ensureCurrentBranchOnOrigin: () => {
+        callOrder.push("ensure-origin");
+        return "feature/release-ready";
+      },
+      collectBranchDiff: () => {
+        callOrder.push("branch-diff");
+        return SIMPLE_APP_DIFF;
+      },
+      generateFromRawDiff: async () => {
+        callOrder.push("pr-generate");
+        return {
+          commitMessage: "feat: prepare release v2",
+          sourceSummaries: [],
+          llmUsage: {
+            requestCount: 2,
+            promptTokens: 100,
+            completionTokens: 20,
+            totalTokens: 120,
+          },
+        };
+      },
+      createPullRequest: () => {
+        callOrder.push("pr");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(callOrder).toEqual(["commit", "ensure-origin", "branch-diff", "pr-generate", "pr"]);
+    expect(stdout.read().trim()).toBe("feat: prepare release v2");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=5 tokens=510 (prompt=400, completion=110)",
+    );
+  });
+
   it("returns exit code 1 when pull request step fails", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
@@ -412,6 +490,25 @@ describe("runCli integration", () => {
     const stderr = createBufferWriter();
 
     const exitCode = await runCli(["pr"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called when pr is missing target branch");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "Failed to generate commit message: pr requires a target branch argument",
+    );
+  });
+
+  it("returns exit code 1 when --pr target branch argument is missing", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--pr"], {
       runPipeline: async () => {
         throw new Error("runPipeline should not be called when pr is missing target branch");
       },

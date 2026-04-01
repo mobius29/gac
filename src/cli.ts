@@ -20,8 +20,12 @@ interface CliOptions {
   commit: boolean;
   completionShell?: CompletionShell;
   debug: boolean;
-  help: boolean;
   pullRequestBase?: string;
+}
+
+interface ParsedCliArgs {
+  helpText?: string;
+  options: CliOptions;
 }
 
 export interface CliDeps {
@@ -213,19 +217,13 @@ function toCliParseError(error: Error): Error {
   return new Error(error.message.replace(/^error:\s*/i, ""));
 }
 
-export function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): ParsedCliArgs {
   const parser = new Command()
     .name("gac")
     .allowUnknownOption(true)
     .allowExcessArguments(true)
-    .addHelpCommand(false)
-    .helpOption(false)
-    .configureOutput({
-      writeErr: () => undefined,
-      writeOut: () => undefined,
-    })
+    .description("Generate one strong Conventional Commit subject line from git diff")
     .exitOverride()
-    .option("-h, --help", "Show this help message and exit")
     .option("--commit", "Commit with the generated message")
     .option("--pr <target-branch>", "Create GitHub pull request targeting branch")
     .option("--completion <shell>", "Print shell completion script (bash|zsh)")
@@ -235,10 +233,29 @@ export function parseArgs(argv: string[]): CliOptions {
       "Only read staged diff; do not fallback to unstaged diff",
     );
 
+  let capturedHelp = "";
+  parser.configureOutput({
+    writeErr: () => undefined,
+    writeOut: (output) => {
+      capturedHelp += output;
+    },
+  });
+
   try {
     parser.parse(["node", "gac", ...normalizeLegacyArgv(argv)], { from: "node" });
   } catch (error: unknown) {
     if (error instanceof Error) {
+      const code = (error as Error & { code?: string }).code;
+      if (code === "commander.helpDisplayed") {
+        return {
+          helpText: capturedHelp || parser.helpInformation(),
+          options: {
+            allowUnstagedFallback: true,
+            commit: false,
+            debug: false,
+          },
+        };
+      }
       throw toCliParseError(error);
     }
     throw error;
@@ -258,27 +275,14 @@ export function parseArgs(argv: string[]): CliOptions {
   }
 
   return {
-    allowUnstagedFallback: parsed.unstagedFallback ?? true,
-    commit: parsed.commit ?? false,
-    completionShell: parseCompletionShellValue(parsed.completion),
-    debug: parsed.debug ?? false,
-    help: parsed.help ?? false,
-    pullRequestBase,
+    options: {
+      allowUnstagedFallback: parsed.unstagedFallback ?? true,
+      commit: parsed.commit ?? false,
+      completionShell: parseCompletionShellValue(parsed.completion),
+      debug: parsed.debug ?? false,
+      pullRequestBase,
+    },
   };
-}
-
-function buildHelpText(): string {
-  return [
-    "Usage: gac [options]",
-    "",
-    "Options:",
-    "  -h, --help                 Show this help message and exit",
-    "      commit                 Commit with the generated message",
-    "      pr <target-branch>     Create GitHub pull request targeting branch",
-    "      completion <shell>     Print shell completion script (bash|zsh)",
-    "      debug                  Print pipeline debug metadata to stderr",
-    "      no-unstaged-fallback   Only read staged diff; do not fallback to unstaged diff",
-  ].join("\n");
 }
 
 function emptyUsageMetrics(): LlmUsageMetrics {
@@ -371,14 +375,15 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
   const shouldResolveProvider = deps.runPipeline == null;
 
   try {
-    const options = parseArgs(argv);
-    if (options.completionShell) {
-      stdout.write(`${getCompletionScript(options.completionShell)}\n`);
+    const parsed = parseArgs(argv);
+    if (parsed.helpText) {
+      stdout.write(parsed.helpText);
       return 0;
     }
 
-    if (options.help) {
-      stdout.write(`${buildHelpText()}\n`);
+    const options = parsed.options;
+    if (options.completionShell) {
+      stdout.write(`${getCompletionScript(options.completionShell)}\n`);
       return 0;
     }
 

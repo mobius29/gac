@@ -59,7 +59,7 @@ describe("runCli integration", () => {
     expect(stdout.read()).toContain("Usage: gac [options]");
     expect(stdout.read()).toContain("--no-unstaged-fallback");
     expect(stdout.read()).toContain("--commit");
-    expect(stdout.read()).toContain("--pr");
+    expect(stdout.read()).toContain("--pr <target-branch>");
     expect(stdout.read()).toContain("--debug");
     expect(stderr.read()).toBe("");
   });
@@ -222,9 +222,9 @@ describe("runCli integration", () => {
   it("creates pull request with generated message title when --pr is enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
-    const prCalls: Array<{ title: string }> = [];
+    const prCalls: Array<{ title: string; base: string }> = [];
 
-    const exitCode = await runCli(["--pr"], {
+    const exitCode = await runCli(["--pr", "main"], {
       runPipeline: async () => ({
         diffSource: "staged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -246,7 +246,7 @@ describe("runCli integration", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(prCalls).toEqual([{ title: "feat: add batch import command" }]);
+    expect(prCalls).toEqual([{ title: "feat: add batch import command", base: "main" }]);
     expect(stdout.read().trim()).toBe("feat: add batch import command");
     expect(stderr.read()).toContain(
       "LLM usage: requests=5 tokens=750 (prompt=610, completion=140)",
@@ -258,7 +258,7 @@ describe("runCli integration", () => {
     const stderr = createBufferWriter();
     const callOrder: string[] = [];
 
-    const exitCode = await runCli(["--commit", "--pr"], {
+    const exitCode = await runCli(["--commit", "--pr", "release/v1"], {
       runPipeline: async () => ({
         diffSource: "unstaged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -291,7 +291,7 @@ describe("runCli integration", () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
 
-    const exitCode = await runCli(["--pr"], {
+    const exitCode = await runCli(["--pr", "main"], {
       runPipeline: async () => ({
         diffSource: "staged",
         rawDiff: SIMPLE_APP_DIFF,
@@ -319,6 +319,25 @@ describe("runCli integration", () => {
     );
     expect(stderr.read()).toContain(
       "Failed to create pull request: no commits between base and head",
+    );
+  });
+
+  it("returns exit code 1 when --pr target branch argument is missing", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--pr"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called when --pr is missing target branch");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "Failed to generate commit message: --pr requires a target branch argument",
     );
   });
 });

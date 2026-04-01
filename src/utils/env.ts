@@ -1,12 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-export interface DotEnvLoadResult {
-  filePath: string;
-  loadedKeys: string[];
-}
 
 function normalizeQuotedValue(value: string): string {
   if (value.length < 2) {
@@ -31,7 +23,7 @@ function normalizeQuotedValue(value: string): string {
     .replace(/\\\\/g, "\\");
 }
 
-export function parseDotEnv(content: string): Record<string, string> {
+export function parseEnvAssignments(content: string): Record<string, string> {
   const parsed: Record<string, string> = {};
   const lines = content.split(/\r?\n/);
 
@@ -59,26 +51,4 @@ export function parseDotEnv(content: string): Record<string, string> {
   }
 
   return parsed;
-}
-
-export function loadEnvironmentFile(
-  envFilePath = ".env",
-  env: NodeJS.ProcessEnv = process.env,
-): DotEnvLoadResult {
-  const filePath = resolve(envFilePath);
-  if (!existsSync(filePath)) {
-    return { filePath, loadedKeys: [] };
-  }
-
-  const parsed = parseDotEnv(readFileSync(filePath, "utf8"));
-  const loadedKeys: string[] = [];
-
-  for (const [key, value] of Object.entries(parsed)) {
-    if (env[key] == null) {
-      env[key] = value;
-      loadedKeys.push(key);
-    }
-  }
-
-  return { filePath, loadedKeys };
 }

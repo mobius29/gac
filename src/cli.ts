@@ -69,9 +69,9 @@ function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppC
       env.LLM_PROVIDER,
       fileConfig.llmProvider,
     ),
-    openaiApiKey: firstNonEmpty(env.OPENAI_API_KEY, fileConfig.openaiApiKey),
+    openaiApiKey: firstNonEmpty(env.OPENAI_API_KEY),
     openaiModel: firstNonEmpty(env.OPENAI_MODEL, fileConfig.openaiModel),
-    openaiBaseUrl: firstNonEmpty(env.OPENAI_BASE_URL, fileConfig.openaiBaseUrl),
+    openaiBaseUrl: firstNonEmpty(env.OPENAI_BASE_URL),
     maximumTitleLength,
   };
 }

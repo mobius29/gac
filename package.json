@@ -1,21 +1,45 @@
 {
   "name": "gac",
   "version": "0.1.0",
-  "private": true,
+  "description": "Generate one strong Conventional Commit subject line from git diff",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "gac": "./dist/cli.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pack:check": "npm pack --dry-run --cache ./.npm-cache",
+    "release:check": "pnpm typecheck && pnpm test && pnpm build && pnpm pack:check",
+    "prepublishOnly": "pnpm release:check"
   },
   "engines": {
     "node": ">=18.18"
   },
+  "keywords": [
+    "git",
+    "commit",
+    "conventional-commits",
+    "cli",
+    "llm"
+  ],
+  "license": "UNLICENSED",
   "dependencies": {
     "zod": "^3.24.1"
   },

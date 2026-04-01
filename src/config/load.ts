@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
-import { parseDotEnv } from "../utils/env.js";
+import { parseEnvAssignments } from "../utils/env.js";
 
 export interface AppConfig {
   llmProvider?: string;
@@ -57,12 +57,10 @@ function asPositiveInteger(
 }
 
 function parseConfigFile(filePath: string): AppConfig {
-  const objectValue = parseDotEnv(readFileSync(filePath, "utf8"));
+  const objectValue = parseEnvAssignments(readFileSync(filePath, "utf8"));
   return {
     llmProvider: asString(objectValue.GIT_AUTO_COMMIT_LLM_PROVIDER ?? objectValue.LLM_PROVIDER),
-    openaiApiKey: asString(objectValue.OPENAI_API_KEY),
     openaiModel: asString(objectValue.OPENAI_MODEL),
-    openaiBaseUrl: asString(objectValue.OPENAI_BASE_URL),
     maximumTitleLength: asPositiveInteger(
       objectValue.MAXIMUM_TITLE_LENGTH,
       "MAXIMUM_TITLE_LENGTH",

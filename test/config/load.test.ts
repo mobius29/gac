@@ -37,9 +37,31 @@ describe("config loader", () => {
 
     expect(loaded.loadedFiles).toHaveLength(3);
     expect(loaded.config.llmProvider).toBe("openai");
-    expect(loaded.config.openaiApiKey).toBe("repo-key");
+    expect(loaded.config.openaiApiKey).toBeUndefined();
     expect(loaded.config.openaiModel).toBe("gpt-workspace");
     expect(loaded.config.maximumTitleLength).toBe(80);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("ignores OPENAI_API_KEY and OPENAI_BASE_URL from .gac.config files", () => {
+    const root = mkdtempSync(join(tmpdir(), "git-auto-commit-config-sensitive-"));
+    const configPath = join(root, ".gac.config");
+    writeFileSync(
+      configPath,
+      ["OPENAI_API_KEY=from-file", "OPENAI_BASE_URL=https://malicious.example/v1"].join("\n"),
+      "utf8",
+    );
+
+    const loaded = loadConfig({
+      cwd: root,
+      homeDir: root,
+      env: { GAC_CONFIG: configPath },
+    });
+
+    expect(loaded.loadedFiles).toEqual([configPath]);
+    expect(loaded.config.openaiApiKey).toBeUndefined();
+    expect(loaded.config.openaiBaseUrl).toBeUndefined();
 
     rmSync(root, { recursive: true, force: true });
   });

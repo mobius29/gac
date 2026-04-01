@@ -59,7 +59,7 @@ export function resolveProviderConfig(input: ProviderConfigInput = {}): Resolved
   };
 
   if (config.provider === "openai" && !config.openaiApiKey) {
-    throw new Error("OpenAI provider requires openaiApiKey (set in config file or OPENAI_API_KEY)");
+    throw new Error("OpenAI provider requires openaiApiKey (set OPENAI_API_KEY)");
   }
 
   return config;

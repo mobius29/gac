@@ -2,18 +2,15 @@
 
 CLI to generate one Conventional Commit subject line from git diff.
 
+## Install
+
+```bash
+npm install -g gac
+```
+
 ## Usage
 
 ```bash
-pnpm install
-pnpm build
-pnpm dev
-```
-
-To install the local CLI command:
-
-```bash
-pnpm link --global
 gac
 ```
 
@@ -29,7 +26,7 @@ pnpm dev -- --no-unstaged-fallback
 Commit with the generated message (explicit opt-in):
 
 ```bash
-pnpm dev -- --commit
+gac --commit
 ```
 
 After generating a subject, `gac` prints LLM usage metrics to `stderr`:
@@ -54,21 +51,22 @@ Process environment variables still have highest precedence.
 Supported keys:
 
 - `LLM_PROVIDER`: `mock` or `openai`
-- `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: `gpt-4.1-mini`)
-- `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 - `MAXIMUM_TITLE_LENGTH` (default: `80`)
+
+Sensitive settings are environment-only:
+
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 
 This repository includes a default `.gac.config`.
 
 Example:
 
-```dotenv
+```bash
 # ~/.gac.config or <project>/.gac.config
 LLM_PROVIDER=openai
-OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-4.1-mini
-OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 You can also set values directly in your shell:
@@ -76,4 +74,21 @@ You can also set values directly in your shell:
 ```bash
 export LLM_PROVIDER=openai
 export OPENAI_API_KEY=your-openai-api-key
+export OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+## Local development
+
+```bash
+pnpm install
+pnpm build
+pnpm dev
+```
+
+## Release check (pre-publish)
+
+Run the full verification flow that blocks `npm publish` on failures:
+
+```bash
+pnpm release:check
 ```

@@ -138,3 +138,93 @@ export function commitWithMessage(
 
   runGitCommand(runner, ["commit", "-m", message], "create commit");
 }
+
+export function getLatestCommitSubject(
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string {
+  const result = run(runner, ["log", "-1", "--pretty=%s"]);
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || `git log -1 --pretty=%s failed`;
+    throw new Error(`Failed to read latest commit subject: ${detail}`);
+  }
+
+  const subject = result.stdout.trim();
+  if (subject.length === 0) {
+    throw new Error("Latest commit subject is empty");
+  }
+
+  return subject;
+}
+
+export function getCurrentBranchName(
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string {
+  const result = run(runner, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || `git rev-parse --abbrev-ref HEAD failed`;
+    throw new Error(`Failed to read current branch: ${detail}`);
+  }
+
+  const branch = result.stdout.trim();
+  if (branch.length === 0 || branch === "HEAD") {
+    throw new Error("Cannot determine current branch name");
+  }
+
+  return branch;
+}
+
+export function hasRemoteBranch(
+  branch: string,
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): boolean {
+  const trimmed = branch.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Branch name must be non-empty");
+  }
+
+  const result = run(runner, ["ls-remote", "--exit-code", "--heads", "origin", trimmed]);
+  if (result.status === 0) {
+    return true;
+  }
+
+  // ls-remote exits non-zero when no refs matched.
+  if (result.status === 2) {
+    return false;
+  }
+
+  return false;
+}
+
+export function pushBranchToOrigin(
+  branch: string,
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): void {
+  const trimmed = branch.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Branch name must be non-empty");
+  }
+
+  runGitCommand(runner, ["push", "-u", "origin", trimmed], `push branch ${trimmed} to origin`);
+}
+
+export function ensureCurrentBranchOnOrigin(
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string {
+  const branch = getCurrentBranchName(runner);
+  if (!hasRemoteBranch(branch, runner)) {
+    pushBranchToOrigin(branch, runner);
+  }
+  return branch;
+}
+
+export function collectBranchDiff(
+  baseBranch: string,
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string {
+  const trimmedBase = baseBranch.trim();
+  if (trimmedBase.length === 0) {
+    throw new Error("Target branch must be non-empty");
+  }
+
+  return runDiff(runner, ["diff", "--no-ext-diff", `${trimmedBase}...HEAD`]);
+}

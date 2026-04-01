@@ -3,10 +3,15 @@
 import { pathToFileURL } from "node:url";
 import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
 import { createPullRequest } from "./gh.js";
-import { commitWithMessage } from "./git.js";
+import { collectBranchDiff, commitWithMessage, ensureCurrentBranchOnOrigin } from "./git.js";
 import { createProviderFromConfig } from "./llm/factory.js";
+import { MockLlmProvider } from "./llm/mockProvider.js";
 import type { LlmProvider } from "./llm/provider.js";
+import { generateCommitMessage } from "./pipeline/generate.js";
+import { rankSummaries } from "./pipeline/ranking.js";
 import { runCommitMessagePipeline, type RunPipelineResult } from "./pipeline/run.js";
+import { createTrackedProvider, type LlmUsageMetrics } from "./pipeline/usage.js";
+import type { ChunkSummary } from "./types.js";
 
 interface CliOptions {
   allowUnstagedFallback: boolean;
@@ -22,11 +27,26 @@ export interface CliDeps {
     maximumTitleLength?: number;
     provider?: LlmProvider;
   }) => Promise<RunPipelineResult>;
+  generateFromRawDiff?: (options: {
+    rawDiff: string;
+    maximumTitleLength: number;
+    provider: LlmProvider;
+  }) => Promise<{
+    commitMessage: string;
+    sourceSummaries: ChunkSummary[];
+    llmUsage: LlmUsageMetrics;
+  }>;
   commitChanges?: (options: {
     message: string;
     source: RunPipelineResult["diffSource"];
   }) => void | Promise<void>;
-  createPullRequest?: (options: { title: string; base: string }) => void | Promise<void>;
+  createPullRequest?: (options: {
+    title: string;
+    base: string;
+    body: string;
+  }) => void | Promise<void>;
+  collectBranchDiff?: (baseBranch: string) => string | Promise<string>;
+  ensureCurrentBranchOnOrigin?: () => string | Promise<string>;
   stdout?: Pick<NodeJS.WriteStream, "write">;
   stderr?: Pick<NodeJS.WriteStream, "write">;
 }
@@ -154,8 +174,52 @@ function buildHelpText(): string {
   ].join("\n");
 }
 
-function formatUsageMetrics(result: RunPipelineResult): string {
-  return `LLM usage: requests=${result.llmUsage.requestCount} tokens=${result.llmUsage.totalTokens} (prompt=${result.llmUsage.promptTokens}, completion=${result.llmUsage.completionTokens})`;
+function emptyUsageMetrics(): LlmUsageMetrics {
+  return {
+    requestCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  };
+}
+
+function addUsage(target: LlmUsageMetrics, usage: LlmUsageMetrics): void {
+  target.requestCount += usage.requestCount;
+  target.promptTokens += usage.promptTokens;
+  target.completionTokens += usage.completionTokens;
+  target.totalTokens = target.promptTokens + target.completionTokens;
+}
+
+function normalizeBulletText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").replace(/^[\-*]\s*/, "");
+}
+
+function buildPullRequestBody(summaries: ChunkSummary[]): string {
+  const rankedMeaningful = rankSummaries(summaries)
+    .filter((summary) => !summary.isNoise)
+    .slice(0, 8);
+
+  if (rankedMeaningful.length === 0) {
+    return "## Summary\n- Update branch changes\n";
+  }
+
+  const summaryLines = rankedMeaningful
+    .map((summary) => normalizeBulletText(summary.whatChanged))
+    .filter((line) => line.length > 0)
+    .map((line) => `- ${line}`);
+
+  const rationaleLines = rankedMeaningful
+    .map((summary) => normalizeBulletText(summary.whyLikely))
+    .filter((line, index, items) => line.length > 0 && items.indexOf(line) === index)
+    .slice(0, 5)
+    .map((line) => `- ${line}`);
+
+  const body = ["## Summary", ...summaryLines, "", "## Why", ...rationaleLines];
+  return `${body.join("\n")}\n`;
+}
+
+function formatUsageMetrics(usage: LlmUsageMetrics): string {
+  return `LLM usage: requests=${usage.requestCount} tokens=${usage.totalTokens} (prompt=${usage.promptTokens}, completion=${usage.completionTokens})`;
 }
 
 export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number> {
@@ -167,11 +231,31 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     ((options: { message: string; source: RunPipelineResult["diffSource"] }) => {
       commitWithMessage(options);
     });
+  const generateFromRawDiff =
+    deps.generateFromRawDiff ??
+    (async (options: {
+      rawDiff: string;
+      maximumTitleLength: number;
+      provider: LlmProvider;
+    }) => {
+      const tracked = createTrackedProvider(options.provider);
+      const result = await generateCommitMessage(
+        { rawDiff: options.rawDiff, maximumTitleLength: options.maximumTitleLength },
+        tracked.provider,
+      );
+      return {
+        commitMessage: result.commitMessage,
+        sourceSummaries: result.sourceSummaries,
+        llmUsage: tracked.getUsage(),
+      };
+    });
   const openPullRequest =
     deps.createPullRequest ??
-    ((options: { title: string; base: string }) => {
-      createPullRequest({ title: options.title, base: options.base });
+    ((options: { title: string; base: string; body: string }) => {
+      createPullRequest({ title: options.title, base: options.base, body: options.body });
     });
+  const collectBranchDiffAgainstBase = deps.collectBranchDiff ?? collectBranchDiff;
+  const ensureBranchOnOrigin = deps.ensureCurrentBranchOnOrigin ?? ensureCurrentBranchOnOrigin;
   const shouldResolveProvider = deps.runPipeline == null;
 
   try {
@@ -191,45 +275,115 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
       maximumTitleLength = runtimeConfig.maximumTitleLength ?? DEFAULT_MAXIMUM_TITLE_LENGTH;
     }
 
-    const result = await runPipeline({
-      allowUnstagedFallback: options.allowUnstagedFallback,
-      maximumTitleLength,
-      provider,
-    });
-    if (!result.hasChanges) {
-      stderr.write("No changes detected in staged diff (or unstaged fallback).\n");
-      return 1;
-    }
+    const resolvedProvider = provider ?? new MockLlmProvider();
+    const totalUsage = emptyUsageMetrics();
+    let outputMessage = "";
+    let hasOutput = false;
 
-    if (options.debug) {
-      stderr.write(`[debug] source=${result.diffSource} summaries=${result.sourceSummaries.length}\n`);
-    }
-    stderr.write(`${formatUsageMetrics(result)}\n`);
+    if (options.commit || !options.pullRequestBase) {
+      const result = await runPipeline({
+        allowUnstagedFallback: options.allowUnstagedFallback,
+        maximumTitleLength,
+        provider: resolvedProvider,
+      });
+      if (!result.hasChanges) {
+        stderr.write("No changes detected in staged diff (or unstaged fallback).\n");
+        return 1;
+      }
 
-    if (options.commit) {
+      if (options.debug) {
+        stderr.write(`[debug] source=${result.diffSource} summaries=${result.sourceSummaries.length}\n`);
+      }
+
+      addUsage(totalUsage, result.llmUsage);
       try {
-        await commitChanges({
-          message: result.commitMessage,
-          source: result.diffSource,
-        });
+        if (options.commit) {
+          await commitChanges({
+            message: result.commitMessage,
+            source: result.diffSource,
+          });
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`${formatUsageMetrics(totalUsage)}\n`);
         stderr.write(`Failed to commit changes: ${message}\n`);
         return 1;
       }
+      outputMessage = result.commitMessage;
+      hasOutput = true;
     }
 
     if (options.pullRequestBase) {
       try {
-        await openPullRequest({ title: result.commitMessage, base: options.pullRequestBase });
+        await ensureBranchOnOrigin();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         stderr.write(`Failed to create pull request: ${message}\n`);
         return 1;
       }
+
+      let branchDiff = "";
+      try {
+        branchDiff = await collectBranchDiffAgainstBase(options.pullRequestBase);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`Failed to create pull request: ${message}\n`);
+        return 1;
+      }
+
+      if (!branchDiff.trim()) {
+        stderr.write(
+          `No differences found between current branch and target branch '${options.pullRequestBase}'.\n`,
+        );
+        return 1;
+      }
+
+      let generatedPr: {
+        commitMessage: string;
+        sourceSummaries: ChunkSummary[];
+        llmUsage: LlmUsageMetrics;
+      };
+      try {
+        generatedPr = await generateFromRawDiff({
+          rawDiff: branchDiff,
+          maximumTitleLength,
+          provider: resolvedProvider,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`Failed to create pull request: ${message}\n`);
+        return 1;
+      }
+
+      if (options.debug) {
+        stderr.write(
+          `[debug] source=branch(${options.pullRequestBase}) summaries=${generatedPr.sourceSummaries.length}\n`,
+        );
+      }
+
+      addUsage(totalUsage, generatedPr.llmUsage);
+      const body = buildPullRequestBody(generatedPr.sourceSummaries);
+      try {
+        await openPullRequest({
+          title: generatedPr.commitMessage,
+          base: options.pullRequestBase,
+          body,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`${formatUsageMetrics(totalUsage)}\n`);
+        stderr.write(`Failed to create pull request: ${message}\n`);
+        return 1;
+      }
+      outputMessage = generatedPr.commitMessage;
+      hasOutput = true;
     }
 
-    stdout.write(`${result.commitMessage}\n`);
+    stderr.write(`${formatUsageMetrics(totalUsage)}\n`);
+    if (!hasOutput) {
+      return 0;
+    }
+    stdout.write(`${outputMessage}\n`);
     return 0;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

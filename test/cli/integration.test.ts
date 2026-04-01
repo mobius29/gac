@@ -219,23 +219,38 @@ describe("runCli integration", () => {
     expect(stderr.read()).toContain("Failed to commit changes: nothing to commit");
   });
 
-  it("creates pull request with generated message title when --pr is enabled", async () => {
+  it("creates pull request title/body from branch diff when --pr is enabled", async () => {
     const stdout = createBufferWriter();
     const stderr = createBufferWriter();
-    const prCalls: Array<{ title: string; base: string }> = [];
+    const prCalls: Array<{ title: string; base: string; body: string }> = [];
 
     const exitCode = await runCli(["--pr", "main"], {
-      runPipeline: async () => ({
-        diffSource: "staged",
-        rawDiff: SIMPLE_APP_DIFF,
-        hasChanges: true,
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called for --pr without --commit");
+      },
+      ensureCurrentBranchOnOrigin: () => "feature/new-api",
+      collectBranchDiff: (baseBranch) => {
+        expect(baseBranch).toBe("main");
+        return SIMPLE_APP_DIFF;
+      },
+      generateFromRawDiff: async () => ({
         commitMessage: "feat: add batch import command",
-        sourceSummaries: [],
+        sourceSummaries: [
+          {
+            chunkId: "a",
+            filePath: "src/app.ts",
+            whatChanged: "Add batch import endpoint and handler",
+            whyLikely: "Support bulk data imports",
+            probableType: "feat",
+            importance: 9,
+            isNoise: false,
+          },
+        ],
         llmUsage: {
-          requestCount: 5,
-          promptTokens: 610,
-          completionTokens: 140,
-          totalTokens: 750,
+          requestCount: 2,
+          promptTokens: 420,
+          completionTokens: 90,
+          totalTokens: 510,
         },
       }),
       createPullRequest: (options) => {
@@ -246,10 +261,16 @@ describe("runCli integration", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(prCalls).toEqual([{ title: "feat: add batch import command", base: "main" }]);
+    expect(prCalls).toEqual([
+      {
+        title: "feat: add batch import command",
+        base: "main",
+        body: "## Summary\n- Add batch import endpoint and handler\n\n## Why\n- Support bulk data imports\n",
+      },
+    ]);
     expect(stdout.read().trim()).toBe("feat: add batch import command");
     expect(stderr.read()).toContain(
-      "LLM usage: requests=5 tokens=750 (prompt=610, completion=140)",
+      "LLM usage: requests=2 tokens=510 (prompt=420, completion=90)",
     );
   });
 
@@ -275,6 +296,27 @@ describe("runCli integration", () => {
       commitChanges: () => {
         callOrder.push("commit");
       },
+      ensureCurrentBranchOnOrigin: () => {
+        callOrder.push("ensure-origin");
+        return "feature/pr-ready";
+      },
+      collectBranchDiff: () => {
+        callOrder.push("branch-diff");
+        return SIMPLE_APP_DIFF;
+      },
+      generateFromRawDiff: async () => {
+        callOrder.push("pr-generate");
+        return {
+          commitMessage: "feat: prepare release candidate",
+          sourceSummaries: [],
+          llmUsage: {
+            requestCount: 2,
+            promptTokens: 120,
+            completionTokens: 30,
+            totalTokens: 150,
+          },
+        };
+      },
       createPullRequest: () => {
         callOrder.push("pr");
       },
@@ -283,8 +325,11 @@ describe("runCli integration", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(callOrder).toEqual(["commit", "pr"]);
-    expect(stdout.read().trim()).toBe("fix: prevent duplicate saves");
+    expect(callOrder).toEqual(["commit", "ensure-origin", "branch-diff", "pr-generate", "pr"]);
+    expect(stdout.read().trim()).toBe("feat: prepare release candidate");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=6 tokens=650 (prompt=510, completion=140)",
+    );
   });
 
   it("returns exit code 1 when pull request step fails", async () => {
@@ -292,10 +337,12 @@ describe("runCli integration", () => {
     const stderr = createBufferWriter();
 
     const exitCode = await runCli(["--pr", "main"], {
-      runPipeline: async () => ({
-        diffSource: "staged",
-        rawDiff: SIMPLE_APP_DIFF,
-        hasChanges: true,
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called for --pr without --commit");
+      },
+      ensureCurrentBranchOnOrigin: () => "feature/docs",
+      collectBranchDiff: () => SIMPLE_APP_DIFF,
+      generateFromRawDiff: async () => ({
         commitMessage: "docs: improve usage examples",
         sourceSummaries: [],
         llmUsage: {
@@ -314,9 +361,6 @@ describe("runCli integration", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout.read()).toBe("");
-    expect(stderr.read()).toContain(
-      "LLM usage: requests=2 tokens=190 (prompt=150, completion=40)",
-    );
     expect(stderr.read()).toContain(
       "Failed to create pull request: no commits between base and head",
     );

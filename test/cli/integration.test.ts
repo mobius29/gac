@@ -60,8 +60,48 @@ describe("runCli integration", () => {
     expect(stdout.read()).toContain("--no-unstaged-fallback");
     expect(stdout.read()).toContain("--commit");
     expect(stdout.read()).toContain("--pr <target-branch>");
+    expect(stdout.read()).toContain("--completion <shell>");
     expect(stdout.read()).toContain("--debug");
     expect(stderr.read()).toBe("");
+  });
+
+  it("prints zsh completion script and exits without running pipeline", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--completion", "zsh"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called for completion output");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    const script = stdout.read();
+    expect(script).toContain("compdef _gac gac");
+    expect(script).toContain("refs/remotes/origin");
+    expect(script).toContain("--pr");
+    expect(stderr.read()).toBe("");
+  });
+
+  it("returns exit code 1 for unsupported completion shell", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--completion", "fish"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called for invalid completion shell");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "Failed to generate commit message: Unsupported shell for --completion: fish. Supported shells: bash, zsh",
+    );
   });
 
   it("supports -h as a shorthand for --help", async () => {

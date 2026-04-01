@@ -62,6 +62,18 @@ Enable pipeline debug metadata:
 gac --debug
 ```
 
+Shell completion:
+
+```bash
+# zsh (current session)
+source <(gac --completion zsh)
+
+# bash (current session)
+source <(gac --completion bash)
+```
+
+After loading completion, typing `gac --pr <TAB>` shows branch names from `origin/*`.
+
 After generating a subject, `gac` prints LLM usage metrics to `stderr`:
 request count and token totals (`prompt`, `completion`, `total`).
 

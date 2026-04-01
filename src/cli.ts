@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from "node:url";
+import { getCompletionScript, isCompletionShell, type CompletionShell } from "./completion.js";
 import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
 import { createPullRequest } from "./gh.js";
 import { collectBranchDiff, commitWithMessage, ensureCurrentBranchOnOrigin } from "./git.js";
@@ -125,6 +126,38 @@ function parsePullRequestBase(
   return { base: trimmed, nextIndex: index + 1 };
 }
 
+function parseCompletionShell(argv: string[]): CompletionShell | undefined {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    let value: string | undefined;
+
+    if (arg === "--completion") {
+      const next = argv[index + 1];
+      if (next == null || next.startsWith("-")) {
+        throw new Error("--completion requires a shell argument (bash|zsh)");
+      }
+      value = next.trim();
+      index += 1;
+    } else if (arg.startsWith("--completion=")) {
+      value = arg.slice("--completion=".length).trim();
+    } else {
+      continue;
+    }
+
+    if (!value) {
+      throw new Error("--completion requires a shell argument (bash|zsh)");
+    }
+
+    const normalized = value.toLowerCase();
+    if (!isCompletionShell(normalized)) {
+      throw new Error(`Unsupported shell for --completion: ${value}. Supported shells: bash, zsh`);
+    }
+    return normalized;
+  }
+
+  return undefined;
+}
+
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     allowUnstagedFallback: true,
@@ -169,6 +202,7 @@ function buildHelpText(): string {
     "  -h, --help                 Show this help message and exit",
     "      --commit               Commit with the generated message",
     "      --pr <target-branch>   Create GitHub pull request targeting branch",
+    "      --completion <shell>   Print shell completion script (bash|zsh)",
     "      --debug                Print pipeline debug metadata to stderr",
     "      --no-unstaged-fallback Only read staged diff; do not fallback to unstaged diff",
   ].join("\n");
@@ -259,6 +293,12 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
   const shouldResolveProvider = deps.runPipeline == null;
 
   try {
+    const completionShell = parseCompletionShell(argv);
+    if (completionShell) {
+      stdout.write(`${getCompletionScript(completionShell)}\n`);
+      return 0;
+    }
+
     const options = parseArgs(argv);
     if (options.help) {
       stdout.write(`${buildHelpText()}\n`);

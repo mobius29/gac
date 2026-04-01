@@ -1,0 +1,52 @@
+import type { ChunkSummary, DiffChunk, RankedSummary } from "./types.js";
+
+function compactDiff(diff: string, maxChars = 3500): string {
+  if (diff.length <= maxChars) {
+    return diff;
+  }
+  return `${diff.slice(0, maxChars)}\n...<truncated>`;
+}
+
+export function buildChunkSummaryPrompt(chunk: DiffChunk): string {
+  return [
+    "You summarize a git diff chunk into structured JSON.",
+    "Return JSON only with keys: whatChanged, whyLikely, probableType, importance, isNoise.",
+    "probableType must be one of: feat, fix, refactor, docs, test, chore.",
+    "importance must be integer 1-10.",
+    `FILE_PATH: ${chunk.filePath}`,
+    `ADDITIONS: ${chunk.additions}`,
+    `DELETIONS: ${chunk.deletions}`,
+    `NOISE: ${String(chunk.noise.isNoise)}`,
+    "DIFF:",
+    compactDiff(chunk.text),
+  ].join("\n");
+}
+
+export function buildSynthesisPrompt(ranked: RankedSummary[]): string {
+  const top = ranked[0];
+  const type = top?.probableType ?? "chore";
+  const subject = top ? top.whatChanged.toLowerCase().replace(/[.]/g, "") : "update project files";
+  const context = ranked
+    .slice(0, 5)
+    .map((s) => `- [${s.rankScore.toFixed(2)}] ${s.filePath}: ${s.whatChanged}`)
+    .join("\n");
+
+  return [
+    "Generate exactly one Conventional Commit subject line.",
+    "No body. Keep it concise and action-oriented.",
+    `TOP_TYPE: ${type}`,
+    `TOP_SUBJECT: ${subject}`,
+    "RANKED_SUMMARIES:",
+    context || "- none",
+  ].join("\n");
+}
+
+export function summaryFallbackSubject(summary: ChunkSummary): string {
+  const cleaned = summary.whatChanged
+    .replace(/^modified\s+/i, "")
+    .replace(/^updated\s+/i, "")
+    .replace(/[.]+$/g, "")
+    .trim();
+
+  return cleaned.length > 0 ? cleaned : "update project files";
+}

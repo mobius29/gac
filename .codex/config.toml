@@ -1,0 +1,15 @@
+model = "gpt-5.3-codex"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "cached"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+project_root_markers = [".git"]
+
+[shell_environment_policy]
+include_only = ["PATH", "HOME", "SHELL", "PNPM_HOME", "NVM_DIR", "VOLTA_HOME"]
+
+[features]
+multi_agent = true
+shell_snapshot = true
+smart_approvals = false

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from "node:url";
+import { Command } from "commander";
 import { getCompletionScript, isCompletionShell, type CompletionShell } from "./completion.js";
 import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
 import { createOrUpdatePullRequest } from "./gh.js";
@@ -17,6 +18,7 @@ import type { ChunkSummary } from "./types.js";
 interface CliOptions {
   allowUnstagedFallback: boolean;
   commit: boolean;
+  completionShell?: CompletionShell;
   debug: boolean;
   help: boolean;
   pullRequestBase?: string;
@@ -115,98 +117,154 @@ function isKnownOptionToken(value: string): boolean {
   );
 }
 
-function parsePullRequestBase(
-  argv: string[],
-  index: number,
-): { base: string; nextIndex: number } {
-  const current = argv[index];
-  if (current?.startsWith("pr=")) {
-    const value = current.slice("pr=".length).trim();
-    if (value.length === 0) {
-      throw new Error("pr requires a non-empty target branch");
-    }
-    return { base: value, nextIndex: index };
+function parseCompletionShellValue(value: string | undefined): CompletionShell | undefined {
+  if (value == null) {
+    return undefined;
   }
 
-  const next = argv[index + 1];
-  if (next == null || isKnownOptionToken(next.trim())) {
-    throw new Error("pr requires a target branch argument");
-  }
-
-  const trimmed = next.trim();
+  const trimmed = value.trim();
   if (trimmed.length === 0) {
-    throw new Error("pr requires a non-empty target branch");
+    throw new Error("completion requires a shell argument (bash|zsh)");
   }
 
-  return { base: trimmed, nextIndex: index + 1 };
+  const normalized = trimmed.toLowerCase();
+  if (!isCompletionShell(normalized)) {
+    throw new Error(`Unsupported shell for completion: ${trimmed}. Supported shells: bash, zsh`);
+  }
+  return normalized;
 }
 
-function parseCompletionShell(argv: string[]): CompletionShell | undefined {
+function normalizeLegacyArgv(argv: string[]): string[] {
+  const normalized: string[] = [];
+
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    let value: string | undefined;
-
+    if (arg === "commit") {
+      normalized.push("--commit");
+      continue;
+    }
+    if (arg === "debug") {
+      normalized.push("--debug");
+      continue;
+    }
+    if (arg === "no-unstaged-fallback") {
+      normalized.push("--no-unstaged-fallback");
+      continue;
+    }
+    if (arg === "pr") {
+      const next = argv[index + 1];
+      if (next == null || isKnownOptionToken(next.trim())) {
+        throw new Error("pr requires a target branch argument");
+      }
+      const trimmed = next.trim();
+      if (trimmed.length === 0) {
+        throw new Error("pr requires a non-empty target branch");
+      }
+      normalized.push("--pr", trimmed);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("pr=")) {
+      const value = arg.slice("pr=".length).trim();
+      if (value.length === 0) {
+        throw new Error("pr requires a non-empty target branch");
+      }
+      normalized.push(`--pr=${value}`);
+      continue;
+    }
     if (arg === "completion") {
       const next = argv[index + 1];
       if (next == null || isKnownOptionToken(next.trim())) {
         throw new Error("completion requires a shell argument (bash|zsh)");
       }
-      value = next.trim();
+      const trimmed = next.trim();
+      if (trimmed.length === 0) {
+        throw new Error("completion requires a shell argument (bash|zsh)");
+      }
+      normalized.push("--completion", trimmed);
       index += 1;
-    } else if (arg.startsWith("completion=")) {
-      value = arg.slice("completion=".length).trim();
-    } else {
+      continue;
+    }
+    if (arg.startsWith("completion=")) {
+      const value = arg.slice("completion=".length).trim();
+      if (value.length === 0) {
+        throw new Error("completion requires a shell argument (bash|zsh)");
+      }
+      normalized.push(`--completion=${value}`);
       continue;
     }
 
-    if (!value) {
-      throw new Error("completion requires a shell argument (bash|zsh)");
-    }
-
-    const normalized = value.toLowerCase();
-    if (!isCompletionShell(normalized)) {
-      throw new Error(`Unsupported shell for completion: ${value}. Supported shells: bash, zsh`);
-    }
-    return normalized;
+    normalized.push(arg);
   }
 
-  return undefined;
+  return normalized;
+}
+
+function toCliParseError(error: Error): Error {
+  const code = (error as Error & { code?: string }).code;
+  if (code === "commander.optionMissingArgument") {
+    if (error.message.includes("--pr")) {
+      return new Error("pr requires a target branch argument");
+    }
+    if (error.message.includes("--completion")) {
+      return new Error("completion requires a shell argument (bash|zsh)");
+    }
+  }
+  return new Error(error.message.replace(/^error:\s*/i, ""));
 }
 
 export function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
-    allowUnstagedFallback: true,
-    commit: false,
-    debug: false,
-    help: false,
-  };
+  const parser = new Command()
+    .name("gac")
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .addHelpCommand(false)
+    .helpOption(false)
+    .configureOutput({
+      writeErr: () => undefined,
+      writeOut: () => undefined,
+    })
+    .exitOverride()
+    .option("-h, --help", "Show this help message and exit")
+    .option("--commit", "Commit with the generated message")
+    .option("--pr <target-branch>", "Create GitHub pull request targeting branch")
+    .option("--completion <shell>", "Print shell completion script (bash|zsh)")
+    .option("--debug", "Print pipeline debug metadata to stderr")
+    .option(
+      "--no-unstaged-fallback",
+      "Only read staged diff; do not fallback to unstaged diff",
+    );
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "no-unstaged-fallback") {
-      options.allowUnstagedFallback = false;
-      continue;
+  try {
+    parser.parse(["node", "gac", ...normalizeLegacyArgv(argv)], { from: "node" });
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw toCliParseError(error);
     }
-    if (arg === "commit") {
-      options.commit = true;
-      continue;
-    }
-    if (arg === "debug") {
-      options.debug = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      options.help = true;
-      continue;
-    }
-    if (arg === "pr" || arg.startsWith("pr=")) {
-      const parsed = parsePullRequestBase(argv, index);
-      options.pullRequestBase = parsed.base;
-      index = parsed.nextIndex;
-    }
+    throw error;
   }
 
-  return options;
+  const parsed = parser.opts<{
+    commit?: boolean;
+    completion?: string;
+    debug?: boolean;
+    help?: boolean;
+    pr?: string;
+    unstagedFallback?: boolean;
+  }>();
+  const pullRequestBase = parsed.pr?.trim();
+  if (parsed.pr != null && (!pullRequestBase || pullRequestBase.length === 0)) {
+    throw new Error("pr requires a non-empty target branch");
+  }
+
+  return {
+    allowUnstagedFallback: parsed.unstagedFallback ?? true,
+    commit: parsed.commit ?? false,
+    completionShell: parseCompletionShellValue(parsed.completion),
+    debug: parsed.debug ?? false,
+    help: parsed.help ?? false,
+    pullRequestBase,
+  };
 }
 
 function buildHelpText(): string {
@@ -313,13 +371,12 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
   const shouldResolveProvider = deps.runPipeline == null;
 
   try {
-    const completionShell = parseCompletionShell(argv);
-    if (completionShell) {
-      stdout.write(`${getCompletionScript(completionShell)}\n`);
+    const options = parseArgs(argv);
+    if (options.completionShell) {
+      stdout.write(`${getCompletionScript(options.completionShell)}\n`);
       return 0;
     }
 
-    const options = parseArgs(argv);
     if (options.help) {
       stdout.write(`${buildHelpText()}\n`);
       return 0;

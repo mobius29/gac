@@ -1,65 +1,100 @@
 # gac
 
-CLI to generate one Conventional Commit subject line from git diff.
+CLI that reads your git diff and generates one strong Conventional Commit subject line.
 
 ## Install
 
 ```bash
-npm install -g gac
+npm install -g @mobius29/gac
 ```
 
-## Usage
+## Quick start
 
 ```bash
 gac
 ```
 
-By default it reads staged changes (`git diff --cached --no-ext-diff`).
-If staged changes are empty, it falls back to unstaged (`git diff --no-ext-diff`).
+Default diff source behavior:
 
-Disable fallback:
+1. reads staged diff: `git diff --cached --no-ext-diff`
+2. if staged is empty, falls back to unstaged: `git diff --no-ext-diff`
 
-```bash
-pnpm dev -- --no-unstaged-fallback
-```
-
-Commit with the generated message (explicit opt-in):
+Commit is explicit opt-in only:
 
 ```bash
 gac --commit
 ```
 
+Disable unstaged fallback:
+
+```bash
+gac --no-unstaged-fallback
+```
+
+Show help:
+
+```bash
+gac --help
+```
+
+Enable pipeline debug metadata:
+
+```bash
+gac --debug
+```
+
 After generating a subject, `gac` prints LLM usage metrics to `stderr`:
 request count and token totals (`prompt`, `completion`, `total`).
 
-## LLM Config
+## How it works
+
+`gac` is optimized for large diffs and intent extraction, using this pipeline:
+
+1. collect diff
+2. preprocess/parse by file and hunk
+3. split into bounded chunks
+4. summarize chunks (intent-focused)
+5. rank/filter summaries
+6. synthesize one Conventional Commit subject
+
+Noise-heavy files are downgraded or treated as noise (for example lockfiles, generated files, minified assets, sourcemaps, build artifacts, and binary changes).
+
+Fallback behavior:
+
+1. weak/invalid model output -> deterministic summary-based fallback
+2. only noise changes -> safe `chore:` subject
+3. parsing failure -> explicit error
+
+## Configuration
 
 `gac` reads environment-style settings from `.gac.config`.
 
-Discovery order is from `~` to the current project directory.
-For example, if your project is `~/workspace/app`, `gac` checks:
+Discovery order is from home directory to project root (nearest wins).  
+Example for project `~/workspace/app`:
 
 1. `~/.gac.config`
 2. `~/workspace/.gac.config`
 3. `~/workspace/app/.gac.config`
 
-If you run `gac` from a nested subdirectory, discovery still stops at the git project root.
+You can also point directly to a specific config file with:
 
-Nearest file wins when the same key appears multiple times.
-Process environment variables still have highest precedence.
+- `GAC_CONFIG`
+- `GIT_AUTO_COMMIT_CONFIG`
 
-Supported keys:
+Environment variables always override file values.
 
-- `LLM_PROVIDER`: `mock` or `openai`
+Config keys:
+
+- `LLM_PROVIDER` or `GIT_AUTO_COMMIT_LLM_PROVIDER`: `mock` or `openai`
 - `OPENAI_MODEL` (default: `gpt-4.1-mini`)
-- `MAXIMUM_TITLE_LENGTH` (default: `80`)
-
-Sensitive settings are environment-only:
-
-- `OPENAI_API_KEY`
+- `MAXIMUM_TITLE_LENGTH` or `GIT_AUTO_COMMIT_MAXIMUM_TITLE_LENGTH` (default: `80`)
+- `OPENAI_API_KEY` (required for `openai`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 
-This repository includes a default `.gac.config`.
+Provider default:
+
+- if `OPENAI_API_KEY` is set, provider defaults to `openai`
+- otherwise provider defaults to `mock`
 
 Example:
 
@@ -67,27 +102,27 @@ Example:
 # ~/.gac.config or <project>/.gac.config
 LLM_PROVIDER=openai
 OPENAI_MODEL=gpt-4.1-mini
+MAXIMUM_TITLE_LENGTH=80
 ```
 
-You can also set values directly in your shell:
+Or via shell:
 
 ```bash
-export LLM_PROVIDER=openai
 export OPENAI_API_KEY=your-openai-api-key
-export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_MODEL=gpt-4.1-mini
 ```
 
 ## Local development
 
 ```bash
 pnpm install
+pnpm typecheck
+pnpm test
 pnpm build
-pnpm dev
+pnpm dev -- --help
 ```
 
-## Release check (pre-publish)
-
-Run the full verification flow that blocks `npm publish` on failures:
+## Release check
 
 ```bash
 pnpm release:check

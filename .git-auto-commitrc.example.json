@@ -1,0 +1,6 @@
+{
+  "llmProvider": "openai",
+  "openaiApiKey": "your-openai-api-key",
+  "openaiModel": "gpt-4.1-mini",
+  "openaiBaseUrl": "https://api.openai.com/v1"
+}

@@ -43,6 +43,42 @@ function createBufferWriter(): BufferWriter {
 }
 
 describe("runCli integration", () => {
+  it("prints help output and exits without running pipeline", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--help"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called when showing help");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout.read()).toContain("Usage: gac [options]");
+    expect(stdout.read()).toContain("--no-unstaged-fallback");
+    expect(stdout.read()).toContain("--debug");
+    expect(stderr.read()).toBe("");
+  });
+
+  it("supports -h as a shorthand for --help", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["-h"], {
+      runPipeline: async () => {
+        throw new Error("runPipeline should not be called when showing help");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout.read()).toContain("Usage: gac [options]");
+    expect(stderr.read()).toBe("");
+  });
+
   it("prints one Conventional Commit subject line with the default pipeline flow", async () => {
     const runner = new Runner({
       "diff --cached --no-ext-diff": { stdout: SIMPLE_APP_DIFF },

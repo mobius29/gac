@@ -1,10 +1,10 @@
 {
-  "name": "git-auto-commit",
+  "name": "gac",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "git-auto-commit": "./dist/cli.js"
+    "gac": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

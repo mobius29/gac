@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type GitCommandRunner } from "../../src/git.js";
-import { type LlmProvider } from "../../src/llm/provider.js";
+import { type LlmGenerateRequest, type LlmGenerateResponse, type LlmProvider } from "../../src/llm/provider.js";
 import { MockLlmProvider } from "../../src/llm/mockProvider.js";
 import { generateCommitMessage } from "../../src/pipeline/generate.js";
 import { runCommitMessagePipeline } from "../../src/pipeline/run.js";
@@ -28,6 +28,13 @@ class Runner implements GitCommandRunner {
 class CountingProvider implements LlmProvider {
   summarizeCalls = 0;
 
+  async generate(request: LlmGenerateRequest): Promise<LlmGenerateResponse> {
+    if (request.task === "summarize_chunk") {
+      return { text: await this.summarizeChunk() };
+    }
+    return { text: await this.synthesizeCommit() };
+  }
+
   async summarizeChunk(): Promise<string> {
     this.summarizeCalls += 1;
     return JSON.stringify({
@@ -46,6 +53,13 @@ class CountingProvider implements LlmProvider {
 
 class WeakSummaryProvider implements LlmProvider {
   synthesizeCalls = 0;
+
+  async generate(request: LlmGenerateRequest): Promise<LlmGenerateResponse> {
+    if (request.task === "summarize_chunk") {
+      return { text: await this.summarizeChunk(request.prompt) };
+    }
+    return { text: await this.synthesizeCommit() };
+  }
 
   async summarizeChunk(prompt: string): Promise<string> {
     const filePath = prompt.match(/FILE_PATH:\s*(.+)/)?.[1]?.trim() ?? "src/unknown.ts";

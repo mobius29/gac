@@ -111,6 +111,51 @@ describe("createPullRequest", () => {
     ]);
   });
 
+  it("uses fallback body when template file does not exist", () => {
+    const cwd = createTempDirectory();
+    const runner = new MockGhRunner({ stdout: "https://example.test/pull/11\n" });
+
+    createPullRequest(
+      {
+        title: "feat: add cache hydration",
+        fallbackBody: "## Summary\n- Add cache hydration worker\n",
+        cwd,
+      },
+      runner,
+    );
+
+    expect(runner.calls).toEqual([
+      [
+        "pr",
+        "create",
+        "--title",
+        "feat: add cache hydration",
+        "--body",
+        "## Summary\n- Add cache hydration worker\n",
+      ],
+    ]);
+  });
+
+  it("prefers template body over fallback body when template file exists", () => {
+    const cwd = createTempDirectory();
+    mkdirSync(join(cwd, ".github"), { recursive: true });
+    writeFileSync(join(cwd, ".github", "pull_request_template.md"), "## Template body\n", "utf8");
+    const runner = new MockGhRunner({ stdout: "https://example.test/pull/12\n" });
+
+    createPullRequest(
+      {
+        title: "feat: integrate queue",
+        fallbackBody: "## Summary\n- Generated body that should be ignored\n",
+        cwd,
+      },
+      runner,
+    );
+
+    expect(runner.calls).toEqual([
+      ["pr", "create", "--title", "feat: integrate queue", "--body", "## Template body\n"],
+    ]);
+  });
+
   it("uses template Title directive when present", () => {
     const cwd = createTempDirectory();
     mkdirSync(join(cwd, "docs"), { recursive: true });

@@ -37,6 +37,7 @@ function runGhCommand(runner: GhCommandRunner, args: string[], purpose: string):
 export interface CreatePullRequestOptions {
   title: string;
   body?: string;
+  fallbackBody?: string;
   base?: string;
   head?: string;
   draft?: boolean;
@@ -190,6 +191,7 @@ function buildPullRequestContent(
   generatedTitle: string,
   templateContent: string | undefined,
   explicitBody: string | undefined,
+  fallbackBody: string | undefined,
 ): PullRequestContent {
   const title = generatedTitle.trim();
   if (title.length === 0) {
@@ -206,7 +208,7 @@ function buildPullRequestContent(
   if (!templateContent) {
     return {
       title,
-      body: "",
+      body: fallbackBody ?? "",
     };
   }
 
@@ -305,7 +307,12 @@ export function createPullRequest(
   runner: GhCommandRunner = new DefaultGhCommandRunner(),
 ): CreatePullRequestResult {
   const template = options.body == null ? findPullRequestTemplate(options.cwd ?? process.cwd()) : undefined;
-  const content = buildPullRequestContent(options.title, template?.content, options.body);
+  const content = buildPullRequestContent(
+    options.title,
+    template?.content,
+    options.body,
+    options.fallbackBody,
+  );
   return createPullRequestWithContent(options, content, runner);
 }
 
@@ -314,7 +321,12 @@ export function createOrUpdatePullRequest(
   runner: GhCommandRunner = new DefaultGhCommandRunner(),
 ): UpsertPullRequestResult {
   const template = options.body == null ? findPullRequestTemplate(options.cwd ?? process.cwd()) : undefined;
-  const content = buildPullRequestContent(options.title, template?.content, options.body);
+  const content = buildPullRequestContent(
+    options.title,
+    template?.content,
+    options.body,
+    options.fallbackBody,
+  );
   const existing = findOpenPullRequest(options.base, options.head, runner);
 
   if (existing) {

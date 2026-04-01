@@ -173,6 +173,51 @@ export function getCurrentBranchName(
   return branch;
 }
 
+function getHeadSha(
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string {
+  const result = run(runner, ["rev-parse", "HEAD"]);
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || "git rev-parse HEAD failed";
+    throw new Error(`Failed to read HEAD commit SHA: ${detail}`);
+  }
+
+  const sha = result.stdout.trim();
+  if (sha.length === 0) {
+    throw new Error("HEAD commit SHA is empty");
+  }
+
+  return sha;
+}
+
+function getOriginBranchSha(
+  branch: string,
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): string | undefined {
+  const trimmed = branch.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Branch name must be non-empty");
+  }
+
+  const result = run(runner, ["ls-remote", "--exit-code", "--heads", "origin", trimmed]);
+  if (result.status === 2) {
+    return undefined;
+  }
+
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || `git ls-remote --exit-code --heads origin ${trimmed} failed`;
+    throw new Error(`Failed to query origin branch '${trimmed}': ${detail}`);
+  }
+
+  const firstLine = result.stdout.trim().split(/\r?\n/)[0] ?? "";
+  const sha = firstLine.split(/\s+/)[0]?.trim();
+  if (!sha) {
+    throw new Error(`Failed to query origin branch '${trimmed}': missing commit SHA`);
+  }
+
+  return sha;
+}
+
 export function hasRemoteBranch(
   branch: string,
   runner: GitCommandRunner = new DefaultGitCommandRunner(),
@@ -211,7 +256,10 @@ export function ensureCurrentBranchOnOrigin(
   runner: GitCommandRunner = new DefaultGitCommandRunner(),
 ): string {
   const branch = getCurrentBranchName(runner);
-  if (!hasRemoteBranch(branch, runner)) {
+  const localSha = getHeadSha(runner);
+  const remoteSha = getOriginBranchSha(branch, runner);
+
+  if (remoteSha == null || remoteSha !== localSha) {
     pushBranchToOrigin(branch, runner);
   }
   return branch;

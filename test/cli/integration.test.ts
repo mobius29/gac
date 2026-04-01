@@ -59,6 +59,7 @@ describe("runCli integration", () => {
     expect(stdout.read()).toContain("Usage: gac [options]");
     expect(stdout.read()).toContain("--no-unstaged-fallback");
     expect(stdout.read()).toContain("--commit");
+    expect(stdout.read()).toContain("--pr");
     expect(stdout.read()).toContain("--debug");
     expect(stderr.read()).toBe("");
   });
@@ -216,5 +217,108 @@ describe("runCli integration", () => {
       "LLM usage: requests=3 tokens=270 (prompt=200, completion=70)",
     );
     expect(stderr.read()).toContain("Failed to commit changes: nothing to commit");
+  });
+
+  it("creates pull request with generated message title when --pr is enabled", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+    const prCalls: Array<{ title: string }> = [];
+
+    const exitCode = await runCli(["--pr"], {
+      runPipeline: async () => ({
+        diffSource: "staged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "feat: add batch import command",
+        sourceSummaries: [],
+        llmUsage: {
+          requestCount: 5,
+          promptTokens: 610,
+          completionTokens: 140,
+          totalTokens: 750,
+        },
+      }),
+      createPullRequest: (options) => {
+        prCalls.push(options);
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(prCalls).toEqual([{ title: "feat: add batch import command" }]);
+    expect(stdout.read().trim()).toBe("feat: add batch import command");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=5 tokens=750 (prompt=610, completion=140)",
+    );
+  });
+
+  it("runs commit step before pull request when --commit and --pr are both enabled", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+    const callOrder: string[] = [];
+
+    const exitCode = await runCli(["--commit", "--pr"], {
+      runPipeline: async () => ({
+        diffSource: "unstaged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "fix: prevent duplicate saves",
+        sourceSummaries: [],
+        llmUsage: {
+          requestCount: 4,
+          promptTokens: 390,
+          completionTokens: 110,
+          totalTokens: 500,
+        },
+      }),
+      commitChanges: () => {
+        callOrder.push("commit");
+      },
+      createPullRequest: () => {
+        callOrder.push("pr");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(callOrder).toEqual(["commit", "pr"]);
+    expect(stdout.read().trim()).toBe("fix: prevent duplicate saves");
+  });
+
+  it("returns exit code 1 when pull request step fails", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--pr"], {
+      runPipeline: async () => ({
+        diffSource: "staged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "docs: improve usage examples",
+        sourceSummaries: [],
+        llmUsage: {
+          requestCount: 2,
+          promptTokens: 150,
+          completionTokens: 40,
+          totalTokens: 190,
+        },
+      }),
+      createPullRequest: () => {
+        throw new Error("no commits between base and head");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=2 tokens=190 (prompt=150, completion=40)",
+    );
+    expect(stderr.read()).toContain(
+      "Failed to create pull request: no commits between base and head",
+    );
   });
 });

@@ -2,6 +2,7 @@
 
 import { pathToFileURL } from "node:url";
 import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
+import { createPullRequest } from "./gh.js";
 import { commitWithMessage } from "./git.js";
 import { createProviderFromConfig } from "./llm/factory.js";
 import type { LlmProvider } from "./llm/provider.js";
@@ -12,6 +13,7 @@ interface CliOptions {
   commit: boolean;
   debug: boolean;
   help: boolean;
+  pullRequest: boolean;
 }
 
 export interface CliDeps {
@@ -24,6 +26,7 @@ export interface CliDeps {
     message: string;
     source: RunPipelineResult["diffSource"];
   }) => void | Promise<void>;
+  createPullRequest?: (options: { title: string }) => void | Promise<void>;
   stdout?: Pick<NodeJS.WriteStream, "write">;
   stderr?: Pick<NodeJS.WriteStream, "write">;
 }
@@ -82,6 +85,7 @@ export function parseArgs(argv: string[]): CliOptions {
     commit: argv.includes("--commit"),
     debug: argv.includes("--debug"),
     help: argv.includes("--help") || argv.includes("-h"),
+    pullRequest: argv.includes("--pr"),
   };
 }
 
@@ -92,6 +96,7 @@ function buildHelpText(): string {
     "Options:",
     "  -h, --help                 Show this help message and exit",
     "      --commit               Commit with the generated message",
+    "      --pr                   Create GitHub pull request with generated subject as title",
     "      --debug                Print pipeline debug metadata to stderr",
     "      --no-unstaged-fallback Only read staged diff; do not fallback to unstaged diff",
   ].join("\n");
@@ -110,6 +115,11 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     deps.commitChanges ??
     ((options: { message: string; source: RunPipelineResult["diffSource"] }) => {
       commitWithMessage(options);
+    });
+  const openPullRequest =
+    deps.createPullRequest ??
+    ((options: { title: string }) => {
+      createPullRequest({ title: options.title });
     });
   const shouldResolveProvider = deps.runPipeline == null;
 
@@ -153,6 +163,16 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         stderr.write(`Failed to commit changes: ${message}\n`);
+        return 1;
+      }
+    }
+
+    if (options.pullRequest) {
+      try {
+        await openPullRequest({ title: result.commitMessage });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`Failed to create pull request: ${message}\n`);
         return 1;
       }
     }

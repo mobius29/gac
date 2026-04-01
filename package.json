@@ -1,6 +1,6 @@
 {
-  "name": "gac",
-  "version": "0.1.0",
+  "name": "@mobius29/gac",
+  "version": "1.0.0",
   "description": "Generate one strong Conventional Commit subject line from git diff",
   "type": "module",
   "main": "./dist/index.js",

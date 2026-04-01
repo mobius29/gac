@@ -39,6 +39,7 @@ describe("config loader", () => {
     expect(loaded.config.llmProvider).toBe("openai");
     expect(loaded.config.openaiApiKey).toBe("repo-key");
     expect(loaded.config.openaiModel).toBe("gpt-workspace");
+    expect(loaded.config.maximumTitleLength).toBe(80);
 
     rmSync(root, { recursive: true, force: true });
   });
@@ -63,6 +64,7 @@ describe("config loader", () => {
 
     expect(loaded.loadedFiles).toEqual([configPath]);
     expect(loaded.config.llmProvider).toBe("mock");
+    expect(loaded.config.maximumTitleLength).toBe(80);
 
     rmSync(root, { recursive: true, force: true });
   });
@@ -80,6 +82,7 @@ describe("config loader", () => {
 
     expect(loaded.loadedFiles).toEqual([configPath]);
     expect(loaded.config.openaiModel).toBe("gpt-legacy");
+    expect(loaded.config.maximumTitleLength).toBe(80);
 
     rmSync(root, { recursive: true, force: true });
   });
@@ -103,6 +106,39 @@ describe("config loader", () => {
     expect(loaded.loadedFiles).toContain(join(projectRoot, ".gac.config"));
     expect(loaded.loadedFiles).not.toContain(join(nestedCwd, ".gac.config"));
     expect(loaded.config.openaiModel).toBe("gpt-project");
+    expect(loaded.config.maximumTitleLength).toBe(80);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("loads MAXIMUM_TITLE_LENGTH from config and validates the value", () => {
+    const root = mkdtempSync(join(tmpdir(), "git-auto-commit-config-max-title-"));
+    const configPath = join(root, ".gac.config");
+    writeFileSync(configPath, "MAXIMUM_TITLE_LENGTH=96", "utf8");
+
+    const loaded = loadConfig({
+      cwd: root,
+      homeDir: root,
+      env: { GAC_CONFIG: configPath },
+    });
+
+    expect(loaded.config.maximumTitleLength).toBe(96);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("throws a clear error for invalid MAXIMUM_TITLE_LENGTH", () => {
+    const root = mkdtempSync(join(tmpdir(), "git-auto-commit-config-max-title-invalid-"));
+    const configPath = join(root, ".gac.config");
+    writeFileSync(configPath, "MAXIMUM_TITLE_LENGTH=abc", "utf8");
+
+    expect(() =>
+      loadConfig({
+        cwd: root,
+        homeDir: root,
+        env: { GAC_CONFIG: configPath },
+      }),
+    ).toThrowError(/Invalid MAXIMUM_TITLE_LENGTH/);
 
     rmSync(root, { recursive: true, force: true });
   });

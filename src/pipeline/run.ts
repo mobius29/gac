@@ -6,6 +6,7 @@ import { generateCommitMessage } from "./generate.js";
 
 export interface RunPipelineOptions {
   allowUnstagedFallback?: boolean;
+  maximumTitleLength?: number;
   provider?: LlmProvider;
   gitRunner?: GitCommandRunner;
 }
@@ -35,7 +36,10 @@ export async function runCommitMessagePipeline(
     };
   }
 
-  const result = await generateCommitMessage({ rawDiff: collected.rawDiff }, provider);
+  const result = await generateCommitMessage(
+    { rawDiff: collected.rawDiff, maximumTitleLength: options.maximumTitleLength },
+    provider,
+  );
   return {
     diffSource: collected.source,
     rawDiff: collected.rawDiff,

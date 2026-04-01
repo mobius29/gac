@@ -95,6 +95,21 @@ ${additions}
 `;
 }
 
+function buildManyFileDiff(fileCount: number): string {
+  const files: string[] = [];
+  for (let index = 0; index < fileCount; index += 1) {
+    files.push(`diff --git a/src/file-${index}.ts b/src/file-${index}.ts
+index 1111111..2222222 100644
+--- a/src/file-${index}.ts
++++ b/src/file-${index}.ts
+@@ -1 +1 @@
+-export const value = ${index};
++export const value = ${index + 1};
+`);
+  }
+  return files.join("\n");
+}
+
 const MULTI_FILE_DIFF = `diff --git a/src/noncritical.ts b/src/noncritical.ts
 index 1111111..2222222 100644
 --- a/src/noncritical.ts
@@ -155,6 +170,19 @@ describe("runCommitMessagePipeline integration", () => {
     expect(provider.summarizeCalls).toBeGreaterThan(1);
   });
 
+  it("caps summarize-chunk model calls for very large multi-file diffs", async () => {
+    const provider = new CountingProvider();
+    const runner = new Runner({
+      "diff --cached --no-ext-diff": { stdout: buildManyFileDiff(60) },
+    });
+
+    const result = await runCommitMessagePipeline({ gitRunner: runner, provider });
+
+    expect(result.hasChanges).toBe(true);
+    expect(result.commitMessage).toBe("feat: implement large-scale module updates");
+    expect(provider.summarizeCalls).toBeLessThanOrEqual(24);
+  });
+
   it("uses safe chore fallback when all changes are noise", async () => {
     const runner = new Runner({
       "diff --cached --no-ext-diff": { stdout: LOCKFILE_DIFF },
@@ -166,6 +194,21 @@ describe("runCommitMessagePipeline integration", () => {
     });
 
     expect(result.commitMessage).toBe("chore: update lockfile and generated files");
+  });
+
+  it("skips summarize-chunk model calls when all chunks are classified as noise", async () => {
+    const provider = new CountingProvider();
+    const runner = new Runner({
+      "diff --cached --no-ext-diff": { stdout: LOCKFILE_DIFF },
+    });
+
+    const result = await runCommitMessagePipeline({
+      gitRunner: runner,
+      provider,
+    });
+
+    expect(result.commitMessage).toBe("chore: update lockfile and generated files");
+    expect(provider.summarizeCalls).toBe(0);
   });
 
   it("falls back to the highest-importance non-noise summary when summaries are weak", async () => {

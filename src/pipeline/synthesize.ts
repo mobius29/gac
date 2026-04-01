@@ -10,8 +10,9 @@ function sanitizeSubject(input: string): string {
 export async function synthesizeCommitMessage(
   rankedSummaries: RankedSummary[],
   provider: LlmProvider,
+  maximumTitleLength: number,
 ): Promise<string> {
-  const prompt = buildSynthesisPrompt(rankedSummaries);
+  const prompt = buildSynthesisPrompt(rankedSummaries, maximumTitleLength);
   const candidate = sanitizeSubject(await provider.synthesizeCommit(prompt));
   return commitSubjectSchema.parse(candidate);
 }

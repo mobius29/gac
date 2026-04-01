@@ -73,6 +73,7 @@ export interface RankedSummary extends ChunkSummary {
 
 export interface PipelineInput {
   rawDiff: string;
+  maximumTitleLength?: number;
 }
 
 export interface PipelineResult {

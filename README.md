@@ -54,6 +54,7 @@ Supported keys:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+- `MAXIMUM_TITLE_LENGTH` (default: `80`)
 
 This repository includes a default `.gac.config`.
 

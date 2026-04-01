@@ -8,6 +8,7 @@ export interface AppConfig {
   openaiApiKey?: string;
   openaiModel?: string;
   openaiBaseUrl?: string;
+  maximumTitleLength?: number;
 }
 
 export interface LoadedConfig {
@@ -22,6 +23,7 @@ export interface ConfigLoaderOptions {
 }
 
 const CONFIG_FILE_NAME = ".gac.config";
+export const DEFAULT_MAXIMUM_TITLE_LENGTH = 80;
 
 function asString(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -32,6 +34,28 @@ function asString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function asPositiveInteger(
+  value: unknown,
+  fieldName: string,
+  context: string,
+): number | undefined {
+  const raw = asString(value);
+  if (raw == null) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid ${fieldName} in ${context}: expected a positive integer`);
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid ${fieldName} in ${context}: expected a positive integer`);
+  }
+
+  return parsed;
+}
+
 function parseConfigFile(filePath: string): AppConfig {
   const objectValue = parseDotEnv(readFileSync(filePath, "utf8"));
   return {
@@ -39,6 +63,11 @@ function parseConfigFile(filePath: string): AppConfig {
     openaiApiKey: asString(objectValue.OPENAI_API_KEY),
     openaiModel: asString(objectValue.OPENAI_MODEL),
     openaiBaseUrl: asString(objectValue.OPENAI_BASE_URL),
+    maximumTitleLength: asPositiveInteger(
+      objectValue.MAXIMUM_TITLE_LENGTH,
+      "MAXIMUM_TITLE_LENGTH",
+      filePath,
+    ),
   };
 }
 
@@ -48,6 +77,7 @@ function mergeConfig(base: AppConfig, override: AppConfig): AppConfig {
     openaiApiKey: override.openaiApiKey ?? base.openaiApiKey,
     openaiModel: override.openaiModel ?? base.openaiModel,
     openaiBaseUrl: override.openaiBaseUrl ?? base.openaiBaseUrl,
+    maximumTitleLength: override.maximumTitleLength ?? base.maximumTitleLength,
   };
 }
 
@@ -135,7 +165,10 @@ export function loadConfig(options: ConfigLoaderOptions = {}): LoadedConfig {
   }
 
   return {
-    config: mergedConfig,
+    config: {
+      ...mergedConfig,
+      maximumTitleLength: mergedConfig.maximumTitleLength ?? DEFAULT_MAXIMUM_TITLE_LENGTH,
+    },
     loadedFiles,
   };
 }

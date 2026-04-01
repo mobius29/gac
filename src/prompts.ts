@@ -7,7 +7,15 @@ function compactDiff(diff: string, maxChars = 3500): string {
   return `${diff.slice(0, maxChars)}\n...<truncated>`;
 }
 
-export function buildChunkSummaryPrompt(chunk: DiffChunk): string {
+export interface BuildChunkSummaryPromptOptions {
+  maxDiffChars?: number;
+}
+
+export function buildChunkSummaryPrompt(
+  chunk: DiffChunk,
+  options: BuildChunkSummaryPromptOptions = {},
+): string {
+  const maxDiffChars = options.maxDiffChars ?? 3500;
   return [
     "You summarize a git diff chunk into structured JSON.",
     "Return JSON only with keys: whatChanged, whyLikely, probableType, importance, isNoise.",
@@ -18,11 +26,11 @@ export function buildChunkSummaryPrompt(chunk: DiffChunk): string {
     `DELETIONS: ${chunk.deletions}`,
     `NOISE: ${String(chunk.noise.isNoise)}`,
     "DIFF:",
-    compactDiff(chunk.text),
+    compactDiff(chunk.text, maxDiffChars),
   ].join("\n");
 }
 
-export function buildSynthesisPrompt(ranked: RankedSummary[]): string {
+export function buildSynthesisPrompt(ranked: RankedSummary[], maximumTitleLength = 80): string {
   const top = ranked[0];
   const type = top?.probableType ?? "chore";
   const subject = top ? top.whatChanged.toLowerCase().replace(/[.]/g, "") : "update project files";
@@ -34,6 +42,7 @@ export function buildSynthesisPrompt(ranked: RankedSummary[]): string {
   return [
     "Generate exactly one Conventional Commit subject line.",
     "No body. Keep it concise and action-oriented.",
+    `Subject must be <= ${maximumTitleLength} characters.`,
     `TOP_TYPE: ${type}`,
     `TOP_SUBJECT: ${subject}`,
     "RANKED_SUMMARIES:",

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from "node:url";
-import { loadConfig, type AppConfig } from "./config/load.js";
+import { DEFAULT_MAXIMUM_TITLE_LENGTH, loadConfig, type AppConfig } from "./config/load.js";
 import { commitWithMessage } from "./git.js";
 import { createProviderFromConfig } from "./llm/factory.js";
 import type { LlmProvider } from "./llm/provider.js";
@@ -17,6 +17,7 @@ interface CliOptions {
 export interface CliDeps {
   runPipeline?: (options: {
     allowUnstagedFallback: boolean;
+    maximumTitleLength?: number;
     provider?: LlmProvider;
   }) => Promise<RunPipelineResult>;
   commitChanges?: (options: {
@@ -36,7 +37,32 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return undefined;
 }
 
+function parsePositiveInteger(value: string, context: string): number {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`Invalid MAXIMUM_TITLE_LENGTH from ${context}: expected a positive integer`);
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid MAXIMUM_TITLE_LENGTH from ${context}: expected a positive integer`);
+  }
+  return parsed;
+}
+
 function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppConfig {
+  const maximumTitleLengthRaw = firstNonEmpty(
+    env.GIT_AUTO_COMMIT_MAXIMUM_TITLE_LENGTH,
+    env.MAXIMUM_TITLE_LENGTH,
+  );
+  const maximumTitleLength =
+    maximumTitleLengthRaw == null
+      ? fileConfig.maximumTitleLength
+      : parsePositiveInteger(
+          maximumTitleLengthRaw,
+          "environment variables GIT_AUTO_COMMIT_MAXIMUM_TITLE_LENGTH/MAXIMUM_TITLE_LENGTH",
+        );
+
   return {
     llmProvider: firstNonEmpty(
       env.GIT_AUTO_COMMIT_LLM_PROVIDER,
@@ -46,6 +72,7 @@ function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppC
     openaiApiKey: firstNonEmpty(env.OPENAI_API_KEY, fileConfig.openaiApiKey),
     openaiModel: firstNonEmpty(env.OPENAI_MODEL, fileConfig.openaiModel),
     openaiBaseUrl: firstNonEmpty(env.OPENAI_BASE_URL, fileConfig.openaiBaseUrl),
+    maximumTitleLength,
   };
 }
 
@@ -89,15 +116,18 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
 
   try {
     let provider: LlmProvider | undefined;
+    let maximumTitleLength = DEFAULT_MAXIMUM_TITLE_LENGTH;
 
     if (shouldResolveProvider) {
       const { config: fileConfig } = loadConfig();
       const runtimeConfig = mergeRuntimeConfig(fileConfig, process.env);
       provider = createProviderFromConfig(runtimeConfig);
+      maximumTitleLength = runtimeConfig.maximumTitleLength ?? DEFAULT_MAXIMUM_TITLE_LENGTH;
     }
 
     const result = await runPipeline({
       allowUnstagedFallback: options.allowUnstagedFallback,
+      maximumTitleLength,
       provider,
     });
     if (!result.hasChanges) {

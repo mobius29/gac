@@ -150,6 +150,7 @@ describe("pull request git helpers", () => {
   it("pushes current branch to origin when missing remotely", () => {
     const runner = new Runner({
       "rev-parse --abbrev-ref HEAD": { stdout: "feature/new-pr\n", status: 0 },
+      "rev-parse HEAD": { stdout: "abc123\n", status: 0 },
       "ls-remote --exit-code --heads origin feature/new-pr": { stdout: "", status: 2 },
       "push -u origin feature/new-pr": { stdout: "", status: 0 },
     });
@@ -158,16 +159,18 @@ describe("pull request git helpers", () => {
     expect(branch).toBe("feature/new-pr");
     expect(runner.calls).toEqual([
       "rev-parse --abbrev-ref HEAD",
+      "rev-parse HEAD",
       "ls-remote --exit-code --heads origin feature/new-pr",
       "push -u origin feature/new-pr",
     ]);
   });
 
-  it("does not push when current branch already exists on origin", () => {
+  it("does not push when current branch SHA matches origin branch SHA", () => {
     const runner = new Runner({
       "rev-parse --abbrev-ref HEAD": { stdout: "feature/already-there\n", status: 0 },
+      "rev-parse HEAD": { stdout: "abc123\n", status: 0 },
       "ls-remote --exit-code --heads origin feature/already-there": {
-        stdout: "abc\trefs/heads/feature/already-there\n",
+        stdout: "abc123\trefs/heads/feature/already-there\n",
         status: 0,
       },
     });
@@ -176,7 +179,29 @@ describe("pull request git helpers", () => {
     expect(branch).toBe("feature/already-there");
     expect(runner.calls).toEqual([
       "rev-parse --abbrev-ref HEAD",
+      "rev-parse HEAD",
       "ls-remote --exit-code --heads origin feature/already-there",
+    ]);
+  });
+
+  it("pushes when current branch SHA differs from origin branch SHA", () => {
+    const runner = new Runner({
+      "rev-parse --abbrev-ref HEAD": { stdout: "feature/ahead\n", status: 0 },
+      "rev-parse HEAD": { stdout: "local123\n", status: 0 },
+      "ls-remote --exit-code --heads origin feature/ahead": {
+        stdout: "remote456\trefs/heads/feature/ahead\n",
+        status: 0,
+      },
+      "push -u origin feature/ahead": { stdout: "", status: 0 },
+    });
+
+    const branch = ensureCurrentBranchOnOrigin(runner);
+    expect(branch).toBe("feature/ahead");
+    expect(runner.calls).toEqual([
+      "rev-parse --abbrev-ref HEAD",
+      "rev-parse HEAD",
+      "ls-remote --exit-code --heads origin feature/ahead",
+      "push -u origin feature/ahead",
     ]);
   });
 

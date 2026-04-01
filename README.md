@@ -34,6 +34,7 @@ gac --pr main
 `--pr <target-branch>` behavior:
 
 1. ensures current branch exists on `origin` (pushes with upstream if missing)
+   if local `HEAD` SHA differs from `origin/<current-branch>`, it pushes first
 2. compares branch diff using `git diff <target-branch>...HEAD`
 3. generates PR title and PR body from that diff
 4. if an open PR already exists for `current-branch -> <target-branch>`, updates its title/body

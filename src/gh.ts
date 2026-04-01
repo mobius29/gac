@@ -47,6 +47,16 @@ export interface CreatePullRequestResult {
   output: string;
 }
 
+export interface UpsertPullRequestOptions extends CreatePullRequestOptions {
+  base: string;
+  head: string;
+}
+
+export interface UpsertPullRequestResult extends CreatePullRequestResult {
+  action: "created" | "updated";
+  number?: number;
+}
+
 interface PullRequestTemplate {
   path: string;
   content: string;
@@ -55,6 +65,12 @@ interface PullRequestTemplate {
 interface PullRequestContent {
   title: string;
   body: string;
+}
+
+interface ExistingPullRequest {
+  number: number;
+  headRefOid?: string;
+  url?: string;
 }
 
 const TEMPLATE_FILE_CANDIDATES = [
@@ -204,20 +220,115 @@ function buildPullRequestContent(
   };
 }
 
-export function createPullRequest(
-  options: CreatePullRequestOptions,
-  runner: GhCommandRunner = new DefaultGhCommandRunner(),
-): CreatePullRequestResult {
-  const template = options.body == null ? findPullRequestTemplate(options.cwd ?? process.cwd()) : undefined;
-  const content = buildPullRequestContent(options.title, template?.content, options.body);
+function parseExistingPullRequests(raw: string): ExistingPullRequest[] {
+  if (!raw.trim()) {
+    return [];
+  }
 
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse pull request list JSON: ${message}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("Failed to parse pull request list JSON: expected array");
+  }
+
+  const output: ExistingPullRequest[] = [];
+  for (const item of parsed) {
+    if (typeof item !== "object" || item == null) {
+      continue;
+    }
+
+    const value = item as Record<string, unknown>;
+    const number = value.number;
+    if (typeof number !== "number" || !Number.isInteger(number) || number < 1) {
+      continue;
+    }
+
+    output.push({
+      number,
+      headRefOid: typeof value.headRefOid === "string" ? value.headRefOid : undefined,
+      url: typeof value.url === "string" ? value.url : undefined,
+    });
+  }
+
+  return output;
+}
+
+function findOpenPullRequest(
+  base: string,
+  head: string,
+  runner: GhCommandRunner,
+): ExistingPullRequest | undefined {
+  const raw = runGhCommand(
+    runner,
+    ["pr", "list", "--state", "open", "--base", base, "--head", head, "--json", "number,headRefOid,url"],
+    "list pull requests",
+  );
+  return parseExistingPullRequests(raw)[0];
+}
+
+function createPullRequestWithContent(
+  options: CreatePullRequestOptions,
+  content: PullRequestContent,
+  runner: GhCommandRunner,
+): CreatePullRequestResult {
   const args = ["pr", "create", "--title", content.title, "--body", content.body];
   if (options.draft) {
     args.push("--draft");
   }
   appendOptionalValue(args, "--base", options.base);
   appendOptionalValue(args, "--head", options.head);
-
   const output = runGhCommand(runner, args, "create pull request");
   return { output };
+}
+
+function updatePullRequestWithContent(
+  number: number,
+  content: PullRequestContent,
+  runner: GhCommandRunner,
+): CreatePullRequestResult {
+  const output = runGhCommand(
+    runner,
+    ["pr", "edit", String(number), "--title", content.title, "--body", content.body],
+    `update pull request #${number}`,
+  );
+  return { output };
+}
+
+export function createPullRequest(
+  options: CreatePullRequestOptions,
+  runner: GhCommandRunner = new DefaultGhCommandRunner(),
+): CreatePullRequestResult {
+  const template = options.body == null ? findPullRequestTemplate(options.cwd ?? process.cwd()) : undefined;
+  const content = buildPullRequestContent(options.title, template?.content, options.body);
+  return createPullRequestWithContent(options, content, runner);
+}
+
+export function createOrUpdatePullRequest(
+  options: UpsertPullRequestOptions,
+  runner: GhCommandRunner = new DefaultGhCommandRunner(),
+): UpsertPullRequestResult {
+  const template = options.body == null ? findPullRequestTemplate(options.cwd ?? process.cwd()) : undefined;
+  const content = buildPullRequestContent(options.title, template?.content, options.body);
+  const existing = findOpenPullRequest(options.base, options.head, runner);
+
+  if (existing) {
+    const updated = updatePullRequestWithContent(existing.number, content, runner);
+    return {
+      ...updated,
+      action: "updated",
+      number: existing.number,
+    };
+  }
+
+  const created = createPullRequestWithContent(options, content, runner);
+  return {
+    ...created,
+    action: "created",
+  };
 }

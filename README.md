@@ -25,6 +25,18 @@ Commit is explicit opt-in only:
 gac --commit
 ```
 
+Create a pull request with `gh` (PR title defaults to generated subject):
+
+```bash
+gac --pr
+```
+
+Create commit then open PR:
+
+```bash
+gac --commit --pr
+```
+
 Disable unstaged fallback:
 
 ```bash
@@ -42,6 +54,20 @@ Enable pipeline debug metadata:
 ```bash
 gac --debug
 ```
+
+When `--pr` is used and a GitHub PR template exists, `gac` uses it for PR content.
+Supported template locations include:
+
+1. `.github/pull_request_template.md`
+2. `.github/PULL_REQUEST_TEMPLATE.md`
+3. `docs/pull_request_template.md`
+4. `docs/PULL_REQUEST_TEMPLATE.md`
+5. `pull_request_template.md`
+6. `PULL_REQUEST_TEMPLATE.md`
+7. first Markdown file in `.github/PULL_REQUEST_TEMPLATE/` or `docs/PULL_REQUEST_TEMPLATE/`
+
+Template variables `{{TITLE}}`, `{{COMMIT_SUBJECT}}`, and `{{COMMIT_MESSAGE}}` are replaced with the generated subject.
+If a template line matches `Title: ...`, that rendered value is used as PR title.
 
 After generating a subject, `gac` prints LLM usage metrics to `stderr`:
 request count and token totals (`prompt`, `completion`, `total`).

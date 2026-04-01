@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-import type { CollectedDiff, GitDiffCollectionOptions } from "./types.js";
+import type { CollectedDiff, DiffSource, GitDiffCollectionOptions } from "./types.js";
 
 export interface GitCommandRunner {
   run(args: string[]): { stdout: string; stderr: string; status: number };
@@ -32,6 +32,14 @@ function runDiff(runner: GitCommandRunner, args: string[]): string {
 
 function run(runner: GitCommandRunner, args: string[]) {
   return runner.run(args);
+}
+
+function runGitCommand(runner: GitCommandRunner, args: string[], purpose: string): void {
+  const result = runner.run(args);
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || `git ${args.join(" ")} failed`;
+    throw new Error(`Failed to ${purpose}: ${detail}`);
+  }
 }
 
 function isCachedOptionError(stderr: string): boolean {
@@ -107,4 +115,26 @@ export function collectGitDiff(
     source: "unstaged",
     rawDiff: unstaged,
   };
+}
+
+export interface CommitWithMessageOptions {
+  message: string;
+  source: DiffSource;
+}
+
+export function commitWithMessage(
+  options: CommitWithMessageOptions,
+  runner: GitCommandRunner = new DefaultGitCommandRunner(),
+): void {
+  const message = options.message.trim();
+  if (message.length === 0) {
+    throw new Error("Cannot commit with an empty message");
+  }
+
+  if (options.source === "unstaged") {
+    // Stage tracked changes that were used to generate the message.
+    runGitCommand(runner, ["add", "-u"], "stage tracked unstaged changes");
+  }
+
+  runGitCommand(runner, ["commit", "-m", message], "create commit");
 }

@@ -26,6 +26,12 @@ Disable fallback:
 pnpm dev -- --no-unstaged-fallback
 ```
 
+Commit with the generated message (explicit opt-in):
+
+```bash
+pnpm dev -- --commit
+```
+
 ## LLM Config
 
 `gac` reads environment-style settings from `.gac.config`.

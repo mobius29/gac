@@ -58,6 +58,7 @@ describe("runCli integration", () => {
     expect(exitCode).toBe(0);
     expect(stdout.read()).toContain("Usage: gac [options]");
     expect(stdout.read()).toContain("--no-unstaged-fallback");
+    expect(stdout.read()).toContain("--commit");
     expect(stdout.read()).toContain("--debug");
     expect(stderr.read()).toBe("");
   });
@@ -147,5 +148,55 @@ describe("runCli integration", () => {
     expect(exitCode).toBe(0);
     expect(stderr.read()).toContain("[debug] source=staged summaries=");
     expect(stdout.read().trim()).toMatch(/^(feat|fix|refactor|docs|test|chore):\s+/);
+  });
+
+  it("commits with the generated message when --commit is enabled", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+    const commitCalls: Array<{ message: string; source: "staged" | "unstaged" }> = [];
+
+    const exitCode = await runCli(["--commit"], {
+      runPipeline: async () => ({
+        diffSource: "staged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "feat: add api endpoint",
+        sourceSummaries: [],
+      }),
+      commitChanges: (options) => {
+        commitCalls.push(options);
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(commitCalls).toEqual([{ message: "feat: add api endpoint", source: "staged" }]);
+    expect(stdout.read().trim()).toBe("feat: add api endpoint");
+    expect(stderr.read()).toBe("");
+  });
+
+  it("returns exit code 1 when commit step fails", async () => {
+    const stdout = createBufferWriter();
+    const stderr = createBufferWriter();
+
+    const exitCode = await runCli(["--commit"], {
+      runPipeline: async () => ({
+        diffSource: "unstaged",
+        rawDiff: SIMPLE_APP_DIFF,
+        hasChanges: true,
+        commitMessage: "fix: handle null checks",
+        sourceSummaries: [],
+      }),
+      commitChanges: () => {
+        throw new Error("nothing to commit");
+      },
+      stdout,
+      stderr,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain("Failed to commit changes: nothing to commit");
   });
 });

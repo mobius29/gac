@@ -2,12 +2,14 @@
 
 import { pathToFileURL } from "node:url";
 import { loadConfig, type AppConfig } from "./config/load.js";
+import { commitWithMessage } from "./git.js";
 import { createProviderFromConfig } from "./llm/factory.js";
 import type { LlmProvider } from "./llm/provider.js";
 import { runCommitMessagePipeline, type RunPipelineResult } from "./pipeline/run.js";
 
 interface CliOptions {
   allowUnstagedFallback: boolean;
+  commit: boolean;
   debug: boolean;
   help: boolean;
 }
@@ -17,6 +19,10 @@ export interface CliDeps {
     allowUnstagedFallback: boolean;
     provider?: LlmProvider;
   }) => Promise<RunPipelineResult>;
+  commitChanges?: (options: {
+    message: string;
+    source: RunPipelineResult["diffSource"];
+  }) => void | Promise<void>;
   stdout?: Pick<NodeJS.WriteStream, "write">;
   stderr?: Pick<NodeJS.WriteStream, "write">;
 }
@@ -46,6 +52,7 @@ function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppC
 export function parseArgs(argv: string[]): CliOptions {
   return {
     allowUnstagedFallback: !argv.includes("--no-unstaged-fallback"),
+    commit: argv.includes("--commit"),
     debug: argv.includes("--debug"),
     help: argv.includes("--help") || argv.includes("-h"),
   };
@@ -57,6 +64,7 @@ function buildHelpText(): string {
     "",
     "Options:",
     "  -h, --help                 Show this help message and exit",
+    "      --commit               Commit with the generated message",
     "      --debug                Print pipeline debug metadata to stderr",
     "      --no-unstaged-fallback Only read staged diff; do not fallback to unstaged diff",
   ].join("\n");
@@ -67,6 +75,11 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const runPipeline = deps.runPipeline ?? runCommitMessagePipeline;
+  const commitChanges =
+    deps.commitChanges ??
+    ((options: { message: string; source: RunPipelineResult["diffSource"] }) => {
+      commitWithMessage(options);
+    });
   const shouldResolveProvider = deps.runPipeline == null;
 
   if (options.help) {
@@ -94,6 +107,19 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
 
     if (options.debug) {
       stderr.write(`[debug] source=${result.diffSource} summaries=${result.sourceSummaries.length}\n`);
+    }
+
+    if (options.commit) {
+      try {
+        await commitChanges({
+          message: result.commitMessage,
+          source: result.diffSource,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        stderr.write(`Failed to commit changes: ${message}\n`);
+        return 1;
+      }
     }
 
     stdout.write(`${result.commitMessage}\n`);

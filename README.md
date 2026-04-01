@@ -32,6 +32,9 @@ Commit with the generated message (explicit opt-in):
 pnpm dev -- --commit
 ```
 
+After generating a subject, `gac` prints LLM usage metrics to `stderr`:
+request count and token totals (`prompt`, `completion`, `total`).
+
 ## LLM Config
 
 `gac` reads environment-style settings from `.gac.config`.

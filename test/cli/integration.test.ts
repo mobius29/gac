@@ -100,7 +100,7 @@ describe("runCli integration", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.read().trim()).toMatch(/^(feat|fix|refactor|docs|test|chore):\s+/);
-    expect(stderr.read()).toBe("");
+    expect(stderr.read()).toContain("LLM usage: requests=");
   });
 
   it("returns exit code 1 when no staged or unstaged changes exist", async () => {
@@ -147,6 +147,7 @@ describe("runCli integration", () => {
 
     expect(exitCode).toBe(0);
     expect(stderr.read()).toContain("[debug] source=staged summaries=");
+    expect(stderr.read()).toContain("LLM usage: requests=");
     expect(stdout.read().trim()).toMatch(/^(feat|fix|refactor|docs|test|chore):\s+/);
   });
 
@@ -162,6 +163,12 @@ describe("runCli integration", () => {
         hasChanges: true,
         commitMessage: "feat: add api endpoint",
         sourceSummaries: [],
+        llmUsage: {
+          requestCount: 4,
+          promptTokens: 500,
+          completionTokens: 120,
+          totalTokens: 620,
+        },
       }),
       commitChanges: (options) => {
         commitCalls.push(options);
@@ -173,7 +180,9 @@ describe("runCli integration", () => {
     expect(exitCode).toBe(0);
     expect(commitCalls).toEqual([{ message: "feat: add api endpoint", source: "staged" }]);
     expect(stdout.read().trim()).toBe("feat: add api endpoint");
-    expect(stderr.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=4 tokens=620 (prompt=500, completion=120)",
+    );
   });
 
   it("returns exit code 1 when commit step fails", async () => {
@@ -187,6 +196,12 @@ describe("runCli integration", () => {
         hasChanges: true,
         commitMessage: "fix: handle null checks",
         sourceSummaries: [],
+        llmUsage: {
+          requestCount: 3,
+          promptTokens: 200,
+          completionTokens: 70,
+          totalTokens: 270,
+        },
       }),
       commitChanges: () => {
         throw new Error("nothing to commit");
@@ -197,6 +212,9 @@ describe("runCli integration", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout.read()).toBe("");
+    expect(stderr.read()).toContain(
+      "LLM usage: requests=3 tokens=270 (prompt=200, completion=70)",
+    );
     expect(stderr.read()).toContain("Failed to commit changes: nothing to commit");
   });
 });

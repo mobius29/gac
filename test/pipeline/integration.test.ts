@@ -141,6 +141,8 @@ describe("runCommitMessagePipeline integration", () => {
     expect(result.hasChanges).toBe(true);
     expect(result.diffSource).toBe("staged");
     expect(result.commitMessage).toMatch(/^(feat|fix|refactor|docs|test|chore):\s+/);
+    expect(result.llmUsage.requestCount).toBeGreaterThan(0);
+    expect(result.llmUsage.totalTokens).toBeGreaterThan(0);
   });
 
   it("falls back to unstaged diff when staged diff is empty", async () => {
@@ -156,6 +158,7 @@ describe("runCommitMessagePipeline integration", () => {
 
     expect(result.hasChanges).toBe(true);
     expect(result.diffSource).toBe("unstaged");
+    expect(result.llmUsage.requestCount).toBeGreaterThan(0);
   });
 
   it("splits large diffs into multiple chunk summaries", async () => {
@@ -168,6 +171,7 @@ describe("runCommitMessagePipeline integration", () => {
 
     expect(result.commitMessage).toBe("feat: implement large-scale module updates");
     expect(provider.summarizeCalls).toBeGreaterThan(1);
+    expect(result.llmUsage.requestCount).toBe(provider.summarizeCalls + 1);
   });
 
   it("caps summarize-chunk model calls for very large multi-file diffs", async () => {
@@ -181,6 +185,7 @@ describe("runCommitMessagePipeline integration", () => {
     expect(result.hasChanges).toBe(true);
     expect(result.commitMessage).toBe("feat: implement large-scale module updates");
     expect(provider.summarizeCalls).toBeLessThanOrEqual(24);
+    expect(result.llmUsage.requestCount).toBe(provider.summarizeCalls + 1);
   });
 
   it("uses safe chore fallback when all changes are noise", async () => {
@@ -194,6 +199,7 @@ describe("runCommitMessagePipeline integration", () => {
     });
 
     expect(result.commitMessage).toBe("chore: update lockfile and generated files");
+    expect(result.llmUsage.requestCount).toBe(0);
   });
 
   it("skips summarize-chunk model calls when all chunks are classified as noise", async () => {
@@ -209,6 +215,7 @@ describe("runCommitMessagePipeline integration", () => {
 
     expect(result.commitMessage).toBe("chore: update lockfile and generated files");
     expect(provider.summarizeCalls).toBe(0);
+    expect(result.llmUsage.requestCount).toBe(0);
   });
 
   it("falls back to the highest-importance non-noise summary when summaries are weak", async () => {

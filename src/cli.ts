@@ -97,6 +97,10 @@ function buildHelpText(): string {
   ].join("\n");
 }
 
+function formatUsageMetrics(result: RunPipelineResult): string {
+  return `LLM usage: requests=${result.llmUsage.requestCount} tokens=${result.llmUsage.totalTokens} (prompt=${result.llmUsage.promptTokens}, completion=${result.llmUsage.completionTokens})`;
+}
+
 export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number> {
   const options = parseArgs(argv);
   const stdout = deps.stdout ?? process.stdout;
@@ -138,6 +142,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     if (options.debug) {
       stderr.write(`[debug] source=${result.diffSource} summaries=${result.sourceSummaries.length}\n`);
     }
+    stderr.write(`${formatUsageMetrics(result)}\n`);
 
     if (options.commit) {
       try {

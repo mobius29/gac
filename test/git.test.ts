@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { collectGitDiff, commitWithMessage, type GitCommandRunner } from "../src/git.js";
+import {
+  collectBranchDiff,
+  collectGitDiff,
+  commitWithMessage,
+  ensureCurrentBranchOnOrigin,
+  getCurrentBranchName,
+  hasRemoteBranch,
+  pushBranchToOrigin,
+  type GitCommandRunner,
+} from "../src/git.js";
 
 class Runner implements GitCommandRunner {
   readonly calls: string[] = [];
@@ -108,6 +117,89 @@ describe("commitWithMessage", () => {
 
     expect(() => commitWithMessage({ message: "feat: add parser", source: "staged" }, runner)).toThrowError(
       "Failed to create commit: nothing to commit",
+    );
+  });
+});
+
+describe("pull request git helpers", () => {
+  it("reads current branch name", () => {
+    const runner = new Runner({
+      "rev-parse --abbrev-ref HEAD": { stdout: "feature/pr-draft\n", status: 0 },
+    });
+
+    const branch = getCurrentBranchName(runner);
+    expect(branch).toBe("feature/pr-draft");
+  });
+
+  it("checks whether branch exists on origin", () => {
+    const runner = new Runner({
+      "ls-remote --exit-code --heads origin feature/pr-draft": {
+        stdout: "abc123\trefs/heads/feature/pr-draft\n",
+        status: 0,
+      },
+      "ls-remote --exit-code --heads origin missing-branch": {
+        stdout: "",
+        status: 2,
+      },
+    });
+
+    expect(hasRemoteBranch("feature/pr-draft", runner)).toBe(true);
+    expect(hasRemoteBranch("missing-branch", runner)).toBe(false);
+  });
+
+  it("pushes current branch to origin when missing remotely", () => {
+    const runner = new Runner({
+      "rev-parse --abbrev-ref HEAD": { stdout: "feature/new-pr\n", status: 0 },
+      "ls-remote --exit-code --heads origin feature/new-pr": { stdout: "", status: 2 },
+      "push -u origin feature/new-pr": { stdout: "", status: 0 },
+    });
+
+    const branch = ensureCurrentBranchOnOrigin(runner);
+    expect(branch).toBe("feature/new-pr");
+    expect(runner.calls).toEqual([
+      "rev-parse --abbrev-ref HEAD",
+      "ls-remote --exit-code --heads origin feature/new-pr",
+      "push -u origin feature/new-pr",
+    ]);
+  });
+
+  it("does not push when current branch already exists on origin", () => {
+    const runner = new Runner({
+      "rev-parse --abbrev-ref HEAD": { stdout: "feature/already-there\n", status: 0 },
+      "ls-remote --exit-code --heads origin feature/already-there": {
+        stdout: "abc\trefs/heads/feature/already-there\n",
+        status: 0,
+      },
+    });
+
+    const branch = ensureCurrentBranchOnOrigin(runner);
+    expect(branch).toBe("feature/already-there");
+    expect(runner.calls).toEqual([
+      "rev-parse --abbrev-ref HEAD",
+      "ls-remote --exit-code --heads origin feature/already-there",
+    ]);
+  });
+
+  it("collects diff against target branch with merge-base semantics", () => {
+    const runner = new Runner({
+      "diff --no-ext-diff develop...HEAD": { stdout: "diff --git a/x b/x\n", status: 0 },
+    });
+
+    const rawDiff = collectBranchDiff("develop", runner);
+    expect(rawDiff).toContain("diff --git");
+  });
+
+  it("throws clear push errors", () => {
+    const runner = new Runner({
+      "push -u origin feature/fail": {
+        stdout: "",
+        stderr: "fatal: 'origin' does not appear to be a git repository",
+        status: 1,
+      },
+    });
+
+    expect(() => pushBranchToOrigin("feature/fail", runner)).toThrowError(
+      "Failed to push branch feature/fail to origin: fatal: 'origin' does not appear to be a git repository",
     );
   });
 });

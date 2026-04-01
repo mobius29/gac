@@ -37,6 +37,8 @@ gac pr main
    if local `HEAD` SHA differs from `origin/<current-branch>`, it pushes first
 2. compares branch diff using `git diff <target-branch>...HEAD`
 3. generates PR title and PR body from that diff
+   if a GitHub PR template exists (for example `.github/pull_request_template.md`),
+   template content is used for PR body/title rendering and generated body is used as fallback
 4. if an open PR already exists for `current-branch -> <target-branch>`, updates its title/body
 5. otherwise opens a new PR targeting `<target-branch>`
 

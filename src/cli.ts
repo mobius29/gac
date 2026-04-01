@@ -367,7 +367,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
         title: options.title,
         base: options.base,
         head: options.head,
-        body: options.body,
+        fallbackBody: options.body,
       });
     });
   const collectBranchDiffAgainstBase = deps.collectBranchDiff ?? collectBranchDiff;

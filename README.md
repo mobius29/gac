@@ -28,13 +28,13 @@ gac --commit
 Create a pull request with `gh` (PR title defaults to generated subject):
 
 ```bash
-gac --pr
+gac --pr main
 ```
 
 Create commit then open PR:
 
 ```bash
-gac --commit --pr
+gac --commit --pr main
 ```
 
 Disable unstaged fallback:
@@ -55,7 +55,7 @@ Enable pipeline debug metadata:
 gac --debug
 ```
 
-When `--pr` is used and a GitHub PR template exists, `gac` uses it for PR content.
+When `--pr <target-branch>` is used and a GitHub PR template exists, `gac` uses it for PR content.
 Supported template locations include:
 
 1. `.github/pull_request_template.md`

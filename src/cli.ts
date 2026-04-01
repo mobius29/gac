@@ -13,7 +13,7 @@ interface CliOptions {
   commit: boolean;
   debug: boolean;
   help: boolean;
-  pullRequest: boolean;
+  pullRequestBase?: string;
 }
 
 export interface CliDeps {
@@ -26,7 +26,7 @@ export interface CliDeps {
     message: string;
     source: RunPipelineResult["diffSource"];
   }) => void | Promise<void>;
-  createPullRequest?: (options: { title: string }) => void | Promise<void>;
+  createPullRequest?: (options: { title: string; base: string }) => void | Promise<void>;
   stdout?: Pick<NodeJS.WriteStream, "write">;
   stderr?: Pick<NodeJS.WriteStream, "write">;
 }
@@ -79,14 +79,66 @@ function mergeRuntimeConfig(fileConfig: AppConfig, env: NodeJS.ProcessEnv): AppC
   };
 }
 
+function parsePullRequestBase(
+  argv: string[],
+  index: number,
+): { base: string; nextIndex: number } {
+  const current = argv[index];
+  if (current?.startsWith("--pr=")) {
+    const value = current.slice("--pr=".length).trim();
+    if (value.length === 0) {
+      throw new Error("--pr requires a non-empty target branch");
+    }
+    return { base: value, nextIndex: index };
+  }
+
+  const next = argv[index + 1];
+  if (next == null || next.startsWith("-")) {
+    throw new Error("--pr requires a target branch argument");
+  }
+
+  const trimmed = next.trim();
+  if (trimmed.length === 0) {
+    throw new Error("--pr requires a non-empty target branch");
+  }
+
+  return { base: trimmed, nextIndex: index + 1 };
+}
+
 export function parseArgs(argv: string[]): CliOptions {
-  return {
-    allowUnstagedFallback: !argv.includes("--no-unstaged-fallback"),
-    commit: argv.includes("--commit"),
-    debug: argv.includes("--debug"),
-    help: argv.includes("--help") || argv.includes("-h"),
-    pullRequest: argv.includes("--pr"),
+  const options: CliOptions = {
+    allowUnstagedFallback: true,
+    commit: false,
+    debug: false,
+    help: false,
   };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--no-unstaged-fallback") {
+      options.allowUnstagedFallback = false;
+      continue;
+    }
+    if (arg === "--commit") {
+      options.commit = true;
+      continue;
+    }
+    if (arg === "--debug") {
+      options.debug = true;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      options.help = true;
+      continue;
+    }
+    if (arg === "--pr" || arg.startsWith("--pr=")) {
+      const parsed = parsePullRequestBase(argv, index);
+      options.pullRequestBase = parsed.base;
+      index = parsed.nextIndex;
+    }
+  }
+
+  return options;
 }
 
 function buildHelpText(): string {
@@ -96,7 +148,7 @@ function buildHelpText(): string {
     "Options:",
     "  -h, --help                 Show this help message and exit",
     "      --commit               Commit with the generated message",
-    "      --pr                   Create GitHub pull request with generated subject as title",
+    "      --pr <target-branch>   Create GitHub pull request targeting branch",
     "      --debug                Print pipeline debug metadata to stderr",
     "      --no-unstaged-fallback Only read staged diff; do not fallback to unstaged diff",
   ].join("\n");
@@ -107,7 +159,6 @@ function formatUsageMetrics(result: RunPipelineResult): string {
 }
 
 export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number> {
-  const options = parseArgs(argv);
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const runPipeline = deps.runPipeline ?? runCommitMessagePipeline;
@@ -118,17 +169,18 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     });
   const openPullRequest =
     deps.createPullRequest ??
-    ((options: { title: string }) => {
-      createPullRequest({ title: options.title });
+    ((options: { title: string; base: string }) => {
+      createPullRequest({ title: options.title, base: options.base });
     });
   const shouldResolveProvider = deps.runPipeline == null;
 
-  if (options.help) {
-    stdout.write(`${buildHelpText()}\n`);
-    return 0;
-  }
-
   try {
+    const options = parseArgs(argv);
+    if (options.help) {
+      stdout.write(`${buildHelpText()}\n`);
+      return 0;
+    }
+
     let provider: LlmProvider | undefined;
     let maximumTitleLength = DEFAULT_MAXIMUM_TITLE_LENGTH;
 
@@ -167,9 +219,9 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
       }
     }
 
-    if (options.pullRequest) {
+    if (options.pullRequestBase) {
       try {
-        await openPullRequest({ title: result.commitMessage });
+        await openPullRequest({ title: result.commitMessage, base: options.pullRequestBase });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         stderr.write(`Failed to create pull request: ${message}\n`);

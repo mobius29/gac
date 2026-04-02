@@ -223,7 +223,7 @@ describe("runCommitMessagePipeline integration", () => {
 
     const result = await generateCommitMessage({ rawDiff: MULTI_FILE_DIFF }, provider);
 
-    expect(result.commitMessage).toBe("fix: src/critical.ts");
+    expect(result.commitMessage).toBe("fix: update src/critical.ts");
     expect(provider.synthesizeCalls).toBe(0);
   });
 

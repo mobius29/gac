@@ -51,11 +51,32 @@ export function buildSynthesisPrompt(ranked: RankedSummary[], maximumTitleLength
 }
 
 export function summaryFallbackSubject(summary: ChunkSummary): string {
-  const cleaned = summary.whatChanged
-    .replace(/^modified\s+/i, "")
-    .replace(/^updated\s+/i, "")
+  const normalized = summary.whatChanged
+    .replace(/\s+/g, " ")
     .replace(/[.]+$/g, "")
     .trim();
 
-  return cleaned.length > 0 ? cleaned : "update project files";
+  if (normalized.length === 0) {
+    return "update project files";
+  }
+
+  const imperativeRewrites: Array<{ pattern: RegExp; replacement: string }> = [
+    { pattern: /^(updated|updating)\s+/i, replacement: "update " },
+    { pattern: /^(modified|modifying)\s+/i, replacement: "update " },
+    { pattern: /^(changed|changing)\s+/i, replacement: "update " },
+    { pattern: /^(added|adding)\s+/i, replacement: "add " },
+    { pattern: /^(removed|removing|deleted|deleting)\s+/i, replacement: "remove " },
+  ];
+
+  for (const rewrite of imperativeRewrites) {
+    if (rewrite.pattern.test(normalized)) {
+      return normalized.replace(rewrite.pattern, rewrite.replacement).trim();
+    }
+  }
+
+  if (/^[A-Za-z0-9._/\-]+$/.test(normalized)) {
+    return `update ${normalized}`;
+  }
+
+  return normalized;
 }
